@@ -131,6 +131,53 @@ describe("runCliCommand", () => {
       },
     });
   });
+
+  it("returns exit code 1 for check findings", async () => {
+    const project = await createConfigProject({ invalidName: true });
+
+    await expect(runCliCommand(["check", "--cwd", project])).resolves.toMatchObject({
+      kind: "success",
+      exitCode: 1,
+      report: {
+        findings: [
+          {
+            id: "contract.invalid-name",
+          },
+        ],
+      },
+    });
+  });
+
+  it("suppresses ignored findings", async () => {
+    const project = await createConfigProject({ invalidName: true });
+
+    await expect(
+      runCliCommand(["check", "--cwd", project, "--ignore", "contract.invalid-name"]),
+    ).resolves.toMatchObject({
+      kind: "success",
+      exitCode: 0,
+      report: {
+        success: true,
+      },
+    });
+  });
+
+  it("upgrades warnings in strict mode", async () => {
+    const project = await createConfigProject({ missingDescription: true });
+
+    await expect(runCliCommand(["check", "--cwd", project, "--strict"])).resolves.toMatchObject({
+      kind: "success",
+      exitCode: 1,
+      report: {
+        findings: [
+          {
+            id: "contract.description-missing",
+            severity: "error",
+          },
+        ],
+      },
+    });
+  });
 });
 
 describe("runCli", () => {
@@ -184,10 +231,17 @@ function createCliOutput() {
   return output;
 }
 
-async function createConfigProject(): Promise<string> {
+async function createConfigProject(
+  options: {
+    invalidName?: boolean;
+    missingDescription?: boolean;
+  } = {},
+): Promise<string> {
   const project = await mkdtemp(path.join(tmpdir(), "tool-call-contract-cli-"));
   const moduleUrl = pathToFileURL(path.resolve("src/index.ts")).href;
   const zodUrl = pathToFileURL(path.resolve("node_modules/zod/index.js")).href;
+  const name = options.invalidName ? "search docs!" : "search_docs";
+  const description = options.missingDescription ? "" : "Search documentation.";
 
   await writeFile(
     path.join(project, "tool-call-contract.config.ts"),
@@ -196,13 +250,17 @@ import { z } from "${zodUrl}";
 import { defineConfig, defineToolContract } from "${moduleUrl}";
 
 const searchDocs = defineToolContract({
-  name: "search_docs",
+  name: ${JSON.stringify(name)},
   description: "Search documentation.",
   input: z.object({ query: z.string() }),
 });
+const configuredSearchDocs = {
+  ...searchDocs,
+  description: ${JSON.stringify(description)}
+};
 
 export default defineConfig({
-  contracts: [searchDocs],
+  contracts: [configuredSearchDocs],
 });
 `,
   );

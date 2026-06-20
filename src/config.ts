@@ -142,11 +142,8 @@ function normalizeContract(value: unknown, pathLabel: string): ToolContract {
     throw new ConfigLoadError("config.invalid", `${pathLabel}.name must be a non-empty string.`);
   }
 
-  if (typeof value.description !== "string" || value.description.trim().length === 0) {
-    throw new ConfigLoadError(
-      "config.invalid",
-      `${pathLabel}.description must be a non-empty string.`,
-    );
+  if (typeof value.description !== "string") {
+    throw new ConfigLoadError("config.invalid", `${pathLabel}.description must be a string.`);
   }
 
   if (!isRecord(value.input) || typeof value.input.safeParse !== "function") {

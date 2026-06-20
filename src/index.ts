@@ -28,5 +28,6 @@ export {
 } from "./reporting.js";
 export { ConfigLoadError, defaultConfigFiles, loadConfig, type LoadedConfig } from "./config.js";
 export { createContractRegistry, type ContractRegistry } from "./registry.js";
+export { runContractChecks } from "./checks.js";
 
 export const version = "0.0.0";

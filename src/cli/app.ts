@@ -6,8 +6,10 @@ import {
   type CommandName,
   type CommandReport,
 } from "../reporting.js";
+import { runContractChecks } from "../checks.js";
 import { ConfigLoadError, loadConfig } from "../config.js";
 import { createContractRegistry } from "../registry.js";
+import type { Finding } from "../reporting.js";
 
 export const cliHelpText = `tool-call-contract
 
@@ -251,7 +253,9 @@ async function createPlaceholderReport(parsed: ParsedCliCommand): Promise<Comman
       configPath: parsed.options.config,
       outDir: parsed.options.outDir,
     });
-    const { findings } = createContractRegistry(loaded.config);
+    const { registry, findings: registryFindings } = createContractRegistry(loaded.config);
+    const checkFindings = parsed.command === "check" ? runContractChecks(registry) : [];
+    const findings = applyFindingPolicy([...registryFindings, ...checkFindings], parsed.options);
 
     return createCommandReport({
       command: parsed.command,
@@ -294,6 +298,21 @@ async function createPlaceholderReport(parsed: ParsedCliCommand): Promise<Comman
 
     throw error;
   }
+}
+
+function applyFindingPolicy(findings: readonly Finding[], options: CliOptions): Finding[] {
+  const ignored = new Set(options.ignore);
+
+  return findings
+    .filter((finding) => !ignored.has(finding.id))
+    .map((finding) =>
+      options.strict && finding.severity === "warning"
+        ? {
+            ...finding,
+            severity: "error" as const,
+          }
+        : finding,
+    );
 }
 
 function configFailureExitCode(report: CommandReport): 1 | 2 {
