@@ -51,5 +51,16 @@ export {
   type JsonObject,
   type JsonSynthesisResult,
 } from "./json-schema.js";
+export {
+  formatJson,
+  generateArtifacts,
+  hashContent,
+  renderToolMarkdownDoc,
+  type ArtifactGenerationOptions,
+  type ArtifactGenerationResult,
+  type ArtifactManifest,
+  type GeneratedArtifact,
+  type GeneratedArtifactKind,
+} from "./artifacts.js";
 
 export const version = "0.0.0";
