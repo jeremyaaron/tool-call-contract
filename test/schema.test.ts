@@ -31,7 +31,7 @@ describe("analyzeContractSchema", () => {
     expect(analysis.findings).toEqual([]);
     expect(analysis.capabilities).toEqual({
       validate: true,
-      fixture: "unsupported",
+      fixture: "supported",
       openai: "supported",
       docs: "partial",
     });

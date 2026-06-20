@@ -34,10 +34,22 @@ export {
   analyzeRegistrySchemas,
   exportOpenAITool,
   exportOpenAITools,
-  type JsonObject,
   type OpenAIToolDefinition,
   type OpenAIToolExport,
   type SchemaAnalysis,
 } from "./schema.js";
+export {
+  generateRegistryFixtures,
+  generateToolCallFixtures,
+  type FixtureSource,
+  type ToolCallFixtureSet,
+} from "./fixtures.js";
+export {
+  getFixtureCapabilityForJsonSchema,
+  synthesizeInvalidValue,
+  synthesizeValidValue,
+  type JsonObject,
+  type JsonSynthesisResult,
+} from "./json-schema.js";
 
 export const version = "0.0.0";

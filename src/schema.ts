@@ -3,8 +3,7 @@ import { z } from "zod";
 import type { ToolContract } from "./contracts.js";
 import type { ContractRegistry } from "./registry.js";
 import type { Finding } from "./reporting.js";
-
-export type JsonObject = Record<string, unknown>;
+import { getFixtureCapabilityForJsonSchema, type JsonObject } from "./json-schema.js";
 
 export interface SchemaAnalysis {
   contractName: string;
@@ -84,7 +83,7 @@ export function analyzeContractSchema(contract: ToolContract): SchemaAnalysis {
     jsonSchema: conversion.schema,
     capabilities: {
       validate: true,
-      fixture: "unsupported",
+      fixture: getFixtureCapabilityForJsonSchema(conversion.schema),
       openai: rootObjectFinding ? "unsupported" : "supported",
       docs: "partial",
     },
