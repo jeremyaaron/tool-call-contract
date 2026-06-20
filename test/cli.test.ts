@@ -1,3 +1,8 @@
+import { mkdtemp, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import path from "node:path";
+import { pathToFileURL } from "node:url";
+
 import { describe, expect, it } from "vitest";
 
 import { version } from "../src/index.js";
@@ -80,8 +85,8 @@ describe("parseCliArgs", () => {
 });
 
 describe("runCliCommand", () => {
-  it("returns help output", () => {
-    const result = runCliCommand(["--help"]);
+  it("returns help output", async () => {
+    const result = await runCliCommand(["--help"]);
 
     expect(result).toMatchObject({
       kind: "output",
@@ -92,16 +97,18 @@ describe("runCliCommand", () => {
     }
   });
 
-  it("returns version output", () => {
-    expect(runCliCommand(["--version"])).toEqual({
+  it("returns version output", async () => {
+    await expect(runCliCommand(["--version"])).resolves.toEqual({
       kind: "output",
       exitCode: 0,
       text: "0.0.0\n",
     });
   });
 
-  it("runs check in placeholder mode", () => {
-    expect(runCliCommand(["check"])).toMatchObject({
+  it("runs check after loading config", async () => {
+    const project = await createConfigProject();
+
+    await expect(runCliCommand(["check", "--cwd", project])).resolves.toMatchObject({
       kind: "success",
       exitCode: 0,
       report: {
@@ -110,21 +117,37 @@ describe("runCliCommand", () => {
       },
     });
   });
+
+  it("returns exit code 2 for config loading failures", async () => {
+    await expect(runCliCommand(["check", "--cwd", tmpdir()])).resolves.toMatchObject({
+      kind: "success",
+      exitCode: 2,
+      report: {
+        findings: [
+          {
+            id: "config.not-found",
+          },
+        ],
+      },
+    });
+  });
 });
 
 describe("runCli", () => {
-  it("prints human command output", () => {
+  it("prints human command output", async () => {
+    const project = await createConfigProject();
     const output = createCliOutput();
-    const exitCode = runCli(["check"], output.io);
+    const exitCode = await runCli(["check", "--cwd", project], output.io);
 
     expect(exitCode).toBe(0);
     expect(output.stdout).toContain("tool-call-contract check");
     expect(output.stderr).toBe("");
   });
 
-  it("prints JSON command output", () => {
+  it("prints JSON command output", async () => {
+    const project = await createConfigProject();
     const output = createCliOutput();
-    const exitCode = runCli(["generate", "--json"], output.io);
+    const exitCode = await runCli(["generate", "--cwd", project, "--json"], output.io);
 
     expect(exitCode).toBe(0);
     expect(JSON.parse(output.stdout)).toMatchObject({
@@ -134,9 +157,9 @@ describe("runCli", () => {
     });
   });
 
-  it("prints usage errors to stderr", () => {
+  it("prints usage errors to stderr", async () => {
     const output = createCliOutput();
-    const exitCode = runCli(["validate"], output.io);
+    const exitCode = await runCli(["validate"], output.io);
 
     expect(exitCode).toBe(2);
     expect(output.stdout).toBe("");
@@ -159,4 +182,30 @@ function createCliOutput() {
   };
 
   return output;
+}
+
+async function createConfigProject(): Promise<string> {
+  const project = await mkdtemp(path.join(tmpdir(), "tool-call-contract-cli-"));
+  const moduleUrl = pathToFileURL(path.resolve("src/index.ts")).href;
+  const zodUrl = pathToFileURL(path.resolve("node_modules/zod/index.js")).href;
+
+  await writeFile(
+    path.join(project, "tool-call-contract.config.ts"),
+    `
+import { z } from "${zodUrl}";
+import { defineConfig, defineToolContract } from "${moduleUrl}";
+
+const searchDocs = defineToolContract({
+  name: "search_docs",
+  description: "Search documentation.",
+  input: z.object({ query: z.string() }),
+});
+
+export default defineConfig({
+  contracts: [searchDocs],
+});
+`,
+  );
+
+  return project;
 }

@@ -6,6 +6,8 @@ import {
   type CommandName,
   type CommandReport,
 } from "../reporting.js";
+import { ConfigLoadError, loadConfig } from "../config.js";
+import { createContractRegistry } from "../registry.js";
 
 export const cliHelpText = `tool-call-contract
 
@@ -58,7 +60,7 @@ export type CliRunResult =
     }
   | {
       kind: "success";
-      exitCode: 0 | 1;
+      exitCode: 0 | 1 | 2;
       report: CommandReport;
       json: boolean;
     }
@@ -77,9 +79,9 @@ const defaultOptions: CliOptions = {
   allowUnknown: false,
 };
 
-export function runCli(args: readonly string[], io: CliIo = consoleIo): number {
+export async function runCli(args: readonly string[], io: CliIo = consoleIo): Promise<number> {
   try {
-    const result = runCliCommand(args);
+    const result = await runCliCommand(args);
 
     if (result.kind === "output") {
       io.stdout(result.text);
@@ -100,7 +102,7 @@ export function runCli(args: readonly string[], io: CliIo = consoleIo): number {
   }
 }
 
-export function runCliCommand(args: readonly string[]): CliRunResult {
+export async function runCliCommand(args: readonly string[]): Promise<CliRunResult> {
   if (args.includes("--version") || args.includes("-v")) {
     return {
       kind: "output",
@@ -126,11 +128,11 @@ export function runCliCommand(args: readonly string[]): CliRunResult {
     };
   }
 
-  const report = createPlaceholderReport(parsed);
+  const report = await createPlaceholderReport(parsed);
 
   return {
     kind: "success",
-    exitCode: hasBlockingFailures(report) ? 1 : 0,
+    exitCode: resolveExitCode(report),
     report,
     json: parsed.options.json,
   };
@@ -242,20 +244,72 @@ export function parseCliArgs(args: readonly string[]): ParsedCliCommand | { mess
   };
 }
 
-function createPlaceholderReport(parsed: ParsedCliCommand): CommandReport {
-  return createCommandReport({
-    command: parsed.command,
-    success: true,
-    artifacts:
-      parsed.command === "generate"
-        ? {
-            created: [],
-            updated: [],
-            unchanged: [],
-            deleted: [],
-          }
-        : undefined,
-  });
+async function createPlaceholderReport(parsed: ParsedCliCommand): Promise<CommandReport> {
+  try {
+    const loaded = await loadConfig({
+      cwd: parsed.options.cwd,
+      configPath: parsed.options.config,
+      outDir: parsed.options.outDir,
+    });
+    const { findings } = createContractRegistry(loaded.config);
+
+    return createCommandReport({
+      command: parsed.command,
+      findings,
+      artifacts:
+        parsed.command === "generate"
+          ? {
+              created: [],
+              updated: [],
+              unchanged: [],
+              deleted: [],
+            }
+          : undefined,
+    });
+  } catch (error) {
+    if (error instanceof ConfigLoadError) {
+      return createCommandReport({
+        command: parsed.command,
+        findings: [
+          {
+            id: error.code,
+            severity: "error",
+            title: "Config could not be loaded",
+            message: error.message,
+            suggestion: "Create a valid tool-call-contract config or pass --config.",
+          },
+        ],
+        success: false,
+        artifacts:
+          parsed.command === "generate"
+            ? {
+                created: [],
+                updated: [],
+                unchanged: [],
+                deleted: [],
+              }
+            : undefined,
+      });
+    }
+
+    throw error;
+  }
+}
+
+function configFailureExitCode(report: CommandReport): 1 | 2 {
+  if (report.findings?.some((finding) => finding.id.startsWith("config."))) {
+    return 2;
+  }
+
+  return 1;
+}
+
+function resolveExitCode(report: CommandReport): 0 | 1 | 2 {
+  if (!hasBlockingFailures(report)) {
+    return 0;
+  }
+
+  return configFailureExitCode(report);
 }
 
 function readOptionValue(
