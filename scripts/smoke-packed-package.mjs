@@ -20,7 +20,15 @@ try {
   );
   await run(
     "npm",
-    ["install", "--ignore-scripts", "--no-audit", "--no-fund", tarballPath, "zod@^4.0.0"],
+    [
+      "install",
+      "--ignore-scripts",
+      "--no-audit",
+      "--no-fund",
+      "--dry-run=false",
+      tarballPath,
+      "zod@^4.0.0",
+    ],
     {
       cwd: project,
     },
@@ -109,7 +117,9 @@ if (!result.ok) {
 }
 
 async function packPackage() {
-  const { stdout } = await run("npm", ["pack", "--json", "--ignore-scripts"], { cwd: root });
+  const { stdout } = await run("npm", ["pack", "--json", "--ignore-scripts", "--dry-run=false"], {
+    cwd: root,
+  });
   const packResult = JSON.parse(stdout);
   const filename = packResult[0]?.filename;
 

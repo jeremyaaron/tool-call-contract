@@ -10,10 +10,10 @@
   "bugs": {
     "url": "https://github.com/jeremyaaron/tool-call-contract/issues"
   },
-  "homepage": "https://github.com/jeremyaaron/tool-call-contract#readme",
+  "homepage": "https://jeremyaaron.github.io/tool-call-contract/",
   "type": "module",
   "bin": {
-    "tool-call-contract": "./dist/cli/index.js"
+    "tool-call-contract": "dist/cli/index.js"
   },
   "exports": {
     ".": {
