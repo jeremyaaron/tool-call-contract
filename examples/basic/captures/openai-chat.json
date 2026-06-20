@@ -1,0 +1,18 @@
+{
+  "choices": [
+    {
+      "message": {
+        "tool_calls": [
+          {
+            "id": "call_search_docs",
+            "type": "function",
+            "function": {
+              "name": "search_knowledge_base",
+              "arguments": "{\"query\":\"retention policy\",\"product\":\"platform\",\"limit\":2}"
+            }
+          }
+        ]
+      }
+    }
+  ]
+}

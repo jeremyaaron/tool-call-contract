@@ -1,0 +1,74 @@
+{
+  "name": "tool-call-contract",
+  "version": "0.1.0",
+  "description": "Define AI tool contracts once, then validate calls and generate test artifacts.",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/jeremyaaron/tool-call-contract.git"
+  },
+  "bugs": {
+    "url": "https://github.com/jeremyaaron/tool-call-contract/issues"
+  },
+  "homepage": "https://jeremyaaron.github.io/tool-call-contract/",
+  "type": "module",
+  "bin": {
+    "tool-call-contract": "dist/cli/index.js"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE",
+    "CHANGELOG.md"
+  ],
+  "scripts": {
+    "build": "tsup src/index.ts src/cli/index.ts --format esm --dts --clean",
+    "format": "prettier --check .",
+    "lint": "eslint .",
+    "pack:check": "pkg-guard check && npm pack --dry-run --ignore-scripts",
+    "prepublishOnly": "npm run verify:release",
+    "smoke:package": "node scripts/smoke-packed-package.mjs",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "verify:release": "npm run lint && npm run format && npm run typecheck && npm test && npm run build && npm run pack:check && npm run smoke:package"
+  },
+  "keywords": [
+    "ai",
+    "agents",
+    "tools",
+    "contracts",
+    "zod",
+    "testing"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "packageManager": "npm@10.8.2",
+  "peerDependencies": {
+    "zod": "^4.0.0"
+  },
+  "overrides": {
+    "esbuild": "^0.28.1"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.0.0",
+    "@types/node": "^20.0.0",
+    "eslint": "^9.0.0",
+    "pkg-guard": "^0.1.0",
+    "prettier": "^3.0.0",
+    "tsup": "^8.0.0",
+    "typescript": "^5.5.0",
+    "typescript-eslint": "^8.0.0",
+    "vitest": "^3.0.0",
+    "zod": "^4.0.0"
+  },
+  "dependencies": {
+    "jiti": "^2.7.0"
+  }
+}

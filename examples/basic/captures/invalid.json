@@ -1,0 +1,8 @@
+{
+  "name": "create_issue",
+  "arguments": {
+    "title": "",
+    "body": "This should fail because the title is empty.",
+    "priority": "urgent"
+  }
+}

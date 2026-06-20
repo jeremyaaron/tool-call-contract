@@ -1,0 +1,148 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>tool-call-contract</title>
+    <meta
+      name="description"
+      content="Define AI tool contracts once, then validate captured calls and generate reviewable fixtures, schemas, docs, and manifests."
+    />
+    <meta property="og:title" content="tool-call-contract" />
+    <meta
+      property="og:description"
+      content="A TypeScript library and CLI for AI tool-call contracts, validation, fixtures, docs, and OpenAI schema export."
+    />
+    <meta property="og:type" content="website" />
+    <meta name="theme-color" content="#f7f4ee" />
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <header class="site-header" aria-label="Primary navigation">
+      <a class="brand" href="#top" aria-label="tool-call-contract home">
+        <span class="brand-mark" aria-hidden="true">tc</span>
+        <span>tool-call-contract</span>
+      </a>
+      <nav class="nav-links">
+        <a href="#workflow">Workflow</a>
+        <a href="#artifacts">Artifacts</a>
+        <a href="#install">Install</a>
+        <a href="https://github.com/jeremyaaron/tool-call-contract">GitHub</a>
+      </nav>
+    </header>
+
+    <main id="top">
+      <section class="hero" aria-labelledby="hero-title">
+        <canvas id="contract-scene" aria-hidden="true"></canvas>
+        <div class="hero-content">
+          <p class="eyebrow">TypeScript contracts for AI tools</p>
+          <h1 id="hero-title">tool-call-contract</h1>
+          <p class="hero-copy">
+            Define each tool once with Zod, then validate captured calls and generate fixtures,
+            OpenAI schemas, Markdown docs, and a deterministic manifest.
+          </p>
+          <div class="hero-actions" aria-label="Primary actions">
+            <a class="button primary" href="#install">Install</a>
+            <a class="button secondary" href="https://github.com/jeremyaaron/tool-call-contract">
+              View source
+            </a>
+          </div>
+        </div>
+        <div class="hero-snapshot" aria-label="Generated artifact preview">
+          <div class="snapshot-toolbar">
+            <span></span>
+            <span></span>
+            <span></span>
+          </div>
+          <pre><code>tool-call-contract check
+No findings.
+
+tool-call-contract generate
+Artifacts: 8 created, 0 updated
+
+tool-call-contract validate captures/*.json
+Validation results: 12 valid, 0 invalid.</code></pre>
+        </div>
+      </section>
+
+      <section class="section intro" id="workflow" aria-labelledby="workflow-title">
+        <div class="section-heading">
+          <p class="eyebrow">One source of truth</p>
+          <h2 id="workflow-title">From contract to confidence</h2>
+        </div>
+        <div class="workflow-grid">
+          <article>
+            <span class="step">1</span>
+            <h3>Define</h3>
+            <p>Write a named tool contract with a description and a Zod input schema.</p>
+          </article>
+          <article>
+            <span class="step">2</span>
+            <h3>Generate</h3>
+            <p>Create reviewable fixtures, provider schemas, docs, and content hashes.</p>
+          </article>
+          <article>
+            <span class="step">3</span>
+            <h3>Validate</h3>
+            <p>Check captured model calls from local files, CI traces, or OpenAI responses.</p>
+          </article>
+        </div>
+      </section>
+
+      <section class="section split" id="artifacts" aria-labelledby="artifacts-title">
+        <div>
+          <p class="eyebrow">Generated output</p>
+          <h2 id="artifacts-title">Commit-friendly artifacts for agent work</h2>
+          <p>
+            The CLI writes deterministic files that can live in source control. CI can run
+            <code>check</code> to catch stale generated output before a drifted tool contract
+            reaches production.
+          </p>
+        </div>
+        <div class="artifact-list" aria-label="Generated artifacts">
+          <div><strong>fixtures</strong><span>valid and invalid normalized calls</span></div>
+          <div><strong>schemas</strong><span>OpenAI-compatible tool definitions</span></div>
+          <div><strong>docs</strong><span>Markdown references from executable contracts</span></div>
+          <div><strong>manifest</strong><span>stable hashes for freshness checks</span></div>
+        </div>
+      </section>
+
+      <section class="section code-section" id="install" aria-labelledby="install-title">
+        <div class="section-heading">
+          <p class="eyebrow">Get started</p>
+          <h2 id="install-title">Install, define, verify</h2>
+        </div>
+        <div class="code-grid">
+          <pre><code>npm install -D tool-call-contract zod</code></pre>
+          <pre><code>import { z } from "zod";
+import { defineConfig, defineToolContract } from "tool-call-contract";
+
+const createIssue = defineToolContract({
+  name: "create_issue",
+  description: "Create an engineering issue.",
+  input: z.object({
+    title: z.string().min(1),
+    body: z.string().min(1),
+    priority: z.enum(["low", "high"]).default("low"),
+  }),
+});
+
+export default defineConfig({
+  contracts: [createIssue],
+});</code></pre>
+          <pre><code>npx tool-call-contract check
+npx tool-call-contract generate
+npx tool-call-contract validate captures/*.json</code></pre>
+        </div>
+      </section>
+    </main>
+
+    <footer class="site-footer">
+      <span>tool-call-contract</span>
+      <a href="https://www.npmjs.com/package/tool-call-contract">npm</a>
+      <a href="https://github.com/jeremyaaron/tool-call-contract">GitHub</a>
+    </footer>
+
+    <script src="./main.js"></script>
+  </body>
+</html>

@@ -1,0 +1,35 @@
+[
+  {
+    "name": "search_knowledge_base",
+    "arguments": {
+      "query": "How do billing exports work?",
+      "product": "billing",
+      "limit": 3
+    }
+  },
+  {
+    "name": "create_issue",
+    "arguments": {
+      "title": "Billing export duplicates rows",
+      "body": "Customer reports duplicate rows in the monthly CSV export.",
+      "labels": ["billing", "bug"],
+      "priority": "high"
+    }
+  },
+  {
+    "name": "summarize_thread",
+    "arguments": {
+      "messages": [
+        {
+          "role": "user",
+          "content": "The analytics dashboard is missing yesterday's data."
+        },
+        {
+          "role": "assistant",
+          "content": "I checked the ingestion job and found a delayed warehouse sync."
+        }
+      ],
+      "maxWords": 80
+    }
+  }
+]
