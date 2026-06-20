@@ -14,5 +14,17 @@ export {
   type ToolCallSource,
   type ToolCallValidationResult,
 } from "./validation.js";
+export {
+  createCommandReport,
+  hasBlockingFailures,
+  renderHumanReport,
+  renderJsonReport,
+  summarizeReport,
+  type CommandName,
+  type CommandReport,
+  type Finding,
+  type ReportSummary,
+  type Severity,
+} from "./reporting.js";
 
 export const version = "0.0.0";
