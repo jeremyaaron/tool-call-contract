@@ -79,8 +79,9 @@ export function renderHumanReport(report: CommandReport): string {
   const lines = [`tool-call-contract ${report.command}`];
   const findings = report.findings ?? [];
   const results = report.results ?? [];
+  const artifacts = report.artifacts;
 
-  if (findings.length === 0 && results.length === 0) {
+  if (findings.length === 0 && results.length === 0 && !artifacts) {
     lines.push("No findings.");
     return `${lines.join("\n")}\n`;
   }
@@ -134,6 +135,17 @@ export function renderHumanReport(report: CommandReport): string {
     }
   }
 
+  if (artifacts) {
+    lines.push(
+      `Artifacts: ${artifacts.created.length} created, ${artifacts.updated.length} updated, ${artifacts.unchanged.length} unchanged, ${artifacts.deleted.length} deleted.`,
+    );
+
+    pushArtifactPaths(lines, "Created", artifacts.created);
+    pushArtifactPaths(lines, "Updated", artifacts.updated);
+    pushArtifactPaths(lines, "Unchanged", artifacts.unchanged);
+    pushArtifactPaths(lines, "Deleted", artifacts.deleted);
+  }
+
   return `${lines.join("\n")}\n`;
 }
 
@@ -143,4 +155,16 @@ export function renderJsonReport(report: CommandReport): string {
 
 export function hasBlockingFailures(report: CommandReport): boolean {
   return report.summary.errors > 0 || report.summary.invalidResults > 0 || !report.success;
+}
+
+function pushArtifactPaths(lines: string[], label: string, paths: readonly string[]): void {
+  if (paths.length === 0) {
+    return;
+  }
+
+  lines.push("");
+  lines.push(`${label}:`);
+  for (const file of paths) {
+    lines.push(`  ${file}`);
+  }
 }

@@ -62,5 +62,13 @@ export {
   type GeneratedArtifact,
   type GeneratedArtifactKind,
 } from "./artifacts.js";
+export {
+  planArtifactWrites,
+  writeArtifactPlan,
+  type ArtifactWriteAction,
+  type ArtifactWritePlan,
+  type ArtifactWriteRoots,
+  type PlannedArtifactWrite,
+} from "./artifact-writer.js";
 
 export const version = "0.0.0";

@@ -1,4 +1,4 @@
-import { mkdtemp, writeFile } from "node:fs/promises";
+import { access, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
@@ -194,6 +194,133 @@ describe("runCliCommand", () => {
       },
     });
   });
+
+  it("writes generated artifacts", async () => {
+    const project = await createConfigProject();
+    const result = await runCliCommand(["generate", "--cwd", project]);
+
+    expect(result).toMatchObject({
+      kind: "success",
+      exitCode: 0,
+      report: {
+        artifacts: {
+          created: [
+            ".tool-call-contract/fixtures/search_docs.valid.json",
+            ".tool-call-contract/fixtures/search_docs.invalid.json",
+            ".tool-call-contract/schemas/search_docs.openai.json",
+            ".tool-call-contract/docs/search_docs.md",
+            ".tool-call-contract/manifest.json",
+          ],
+          updated: [],
+          unchanged: [],
+          deleted: [],
+        },
+      },
+    });
+    await expect(
+      readFile(path.join(project, ".tool-call-contract/docs/search_docs.md"), "utf8"),
+    ).resolves.toContain("# search_docs");
+    await expect(
+      readFile(path.join(project, ".tool-call-contract/manifest.json"), "utf8"),
+    ).resolves.toContain('"schemaVersion": 1');
+  });
+
+  it("reports unchanged artifacts on a second generate run", async () => {
+    const project = await createConfigProject();
+
+    await runCliCommand(["generate", "--cwd", project]);
+    await expect(runCliCommand(["generate", "--cwd", project])).resolves.toMatchObject({
+      kind: "success",
+      exitCode: 0,
+      report: {
+        artifacts: {
+          created: [],
+          updated: [],
+          unchanged: [
+            ".tool-call-contract/fixtures/search_docs.valid.json",
+            ".tool-call-contract/fixtures/search_docs.invalid.json",
+            ".tool-call-contract/schemas/search_docs.openai.json",
+            ".tool-call-contract/docs/search_docs.md",
+            ".tool-call-contract/manifest.json",
+          ],
+          deleted: [],
+        },
+      },
+    });
+  });
+
+  it("reports dry-run changes without writing", async () => {
+    const project = await createConfigProject();
+
+    await expect(runCliCommand(["generate", "--cwd", project, "--dry-run"])).resolves.toMatchObject(
+      {
+        kind: "success",
+        exitCode: 0,
+        report: {
+          artifacts: {
+            created: [
+              ".tool-call-contract/fixtures/search_docs.valid.json",
+              ".tool-call-contract/fixtures/search_docs.invalid.json",
+              ".tool-call-contract/schemas/search_docs.openai.json",
+              ".tool-call-contract/docs/search_docs.md",
+              ".tool-call-contract/manifest.json",
+            ],
+          },
+        },
+      },
+    );
+    await expect(fileExists(path.join(project, ".tool-call-contract/manifest.json"))).resolves.toBe(
+      false,
+    );
+  });
+
+  it("writes to the overridden output directory", async () => {
+    const project = await createConfigProject();
+
+    await expect(
+      runCliCommand(["generate", "--cwd", project, "--out-dir", "artifacts/contracts"]),
+    ).resolves.toMatchObject({
+      kind: "success",
+      exitCode: 0,
+      report: {
+        artifacts: {
+          created: [
+            "artifacts/contracts/fixtures/search_docs.valid.json",
+            "artifacts/contracts/fixtures/search_docs.invalid.json",
+            "artifacts/contracts/schemas/search_docs.openai.json",
+            "artifacts/contracts/docs/search_docs.md",
+            "artifacts/contracts/manifest.json",
+          ],
+        },
+      },
+    });
+    await expect(fileExists(path.join(project, "artifacts/contracts/manifest.json"))).resolves.toBe(
+      true,
+    );
+    await expect(fileExists(path.join(project, ".tool-call-contract/manifest.json"))).resolves.toBe(
+      false,
+    );
+  });
+
+  it("reports artifact write failures", async () => {
+    const project = await createConfigProject();
+    await writeFile(path.join(project, ".tool-call-contract"), "not a directory");
+
+    const result = await runCliCommand(["generate", "--cwd", project]);
+
+    expect(result).toMatchObject({
+      kind: "success",
+      exitCode: 1,
+    });
+    expect(result.kind === "success" ? result.report.findings : undefined).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: "artifact.write-failed",
+          severity: "error",
+        }),
+      ]),
+    );
+  });
 });
 
 describe("runCli", () => {
@@ -218,6 +345,18 @@ describe("runCli", () => {
       command: "generate",
       success: true,
     });
+  });
+
+  it("prints human artifact output", async () => {
+    const project = await createConfigProject();
+    const output = createCliOutput();
+    const exitCode = await runCli(["generate", "--cwd", project], output.io);
+
+    expect(exitCode).toBe(0);
+    expect(output.stdout).toContain("tool-call-contract generate");
+    expect(output.stdout).toContain("Artifacts: 5 created, 0 updated, 0 unchanged, 0 deleted.");
+    expect(output.stdout).toContain(".tool-call-contract/manifest.json");
+    expect(output.stderr).toBe("");
   });
 
   it("prints usage errors to stderr", async () => {
@@ -284,4 +423,13 @@ export default defineConfig({
   );
 
   return project;
+}
+
+async function fileExists(file: string): Promise<boolean> {
+  try {
+    await access(file);
+    return true;
+  } catch {
+    return false;
+  }
 }

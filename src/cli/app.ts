@@ -6,6 +6,10 @@ import {
   type CommandName,
   type CommandReport,
 } from "../reporting.js";
+import path from "node:path";
+
+import { generateArtifacts } from "../artifacts.js";
+import { planArtifactWrites, writeArtifactPlan } from "../artifact-writer.js";
 import { runContractChecks } from "../checks.js";
 import { ConfigLoadError, loadConfig } from "../config.js";
 import { createContractRegistry } from "../registry.js";
@@ -131,7 +135,7 @@ export async function runCliCommand(args: readonly string[]): Promise<CliRunResu
     };
   }
 
-  const report = await createPlaceholderReport(parsed);
+  const report = await createCommandReportForParsedInput(parsed);
 
   return {
     kind: "success",
@@ -247,7 +251,7 @@ export function parseCliArgs(args: readonly string[]): ParsedCliCommand | { mess
   };
 }
 
-async function createPlaceholderReport(parsed: ParsedCliCommand): Promise<CommandReport> {
+async function createCommandReportForParsedInput(parsed: ParsedCliCommand): Promise<CommandReport> {
   try {
     const loaded = await loadConfig({
       cwd: parsed.options.cwd,
@@ -255,6 +259,32 @@ async function createPlaceholderReport(parsed: ParsedCliCommand): Promise<Comman
       outDir: parsed.options.outDir,
     });
     const { registry, findings: registryFindings } = createContractRegistry(loaded.config);
+
+    if (parsed.command === "generate") {
+      const generation = generateArtifacts(registry, {
+        outDir: path.relative(loaded.cwd, loaded.outDir),
+      });
+      const plan = await planArtifactWrites(generation.artifacts, {
+        cwd: loaded.cwd,
+        outDir: loaded.outDir,
+      });
+      const preWriteFindings = applyFindingPolicy(
+        [...registryFindings, ...generation.findings, ...plan.findings],
+        parsed.options,
+      );
+      const writeFindings =
+        parsed.options.dryRun || hasErrorFindings(preWriteFindings)
+          ? []
+          : await writeArtifactPlan(plan);
+      const findings = applyFindingPolicy([...preWriteFindings, ...writeFindings], parsed.options);
+
+      return createCommandReport({
+        command: parsed.command,
+        findings,
+        artifacts: plan.artifacts,
+      });
+    }
+
     const checkFindings =
       parsed.command === "check"
         ? [
@@ -267,15 +297,6 @@ async function createPlaceholderReport(parsed: ParsedCliCommand): Promise<Comman
     return createCommandReport({
       command: parsed.command,
       findings,
-      artifacts:
-        parsed.command === "generate"
-          ? {
-              created: [],
-              updated: [],
-              unchanged: [],
-              deleted: [],
-            }
-          : undefined,
     });
   } catch (error) {
     if (error instanceof ConfigLoadError) {
@@ -291,20 +312,25 @@ async function createPlaceholderReport(parsed: ParsedCliCommand): Promise<Comman
           },
         ],
         success: false,
-        artifacts:
-          parsed.command === "generate"
-            ? {
-                created: [],
-                updated: [],
-                unchanged: [],
-                deleted: [],
-              }
-            : undefined,
+        artifacts: parsed.command === "generate" ? emptyArtifactReport() : undefined,
       });
     }
 
     throw error;
   }
+}
+
+function hasErrorFindings(findings: readonly Finding[]): boolean {
+  return findings.some((finding) => finding.severity === "error");
+}
+
+function emptyArtifactReport(): NonNullable<CommandReport["artifacts"]> {
+  return {
+    created: [],
+    updated: [],
+    unchanged: [],
+    deleted: [],
+  };
 }
 
 function applyFindingPolicy(findings: readonly Finding[], options: CliOptions): Finding[] {
