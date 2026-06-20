@@ -63,11 +63,16 @@ export {
   type GeneratedArtifactKind,
 } from "./artifacts.js";
 export {
+  collectArtifactFreshnessFindings,
+  loadArtifactManifest,
   planArtifactWrites,
   writeArtifactPlan,
+  type ArtifactManifestLoadResult,
   type ArtifactWriteAction,
   type ArtifactWritePlan,
+  type ArtifactWritePlanOptions,
   type ArtifactWriteRoots,
+  type PlannedArtifactDelete,
   type PlannedArtifactWrite,
 } from "./artifact-writer.js";
 

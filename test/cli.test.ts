@@ -1,4 +1,4 @@
-import { access, mkdtemp, readFile, writeFile } from "node:fs/promises";
+import { access, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
@@ -321,6 +321,151 @@ describe("runCliCommand", () => {
       ]),
     );
   });
+
+  it("reports stale generated artifacts during check", async () => {
+    const project = await createConfigProject();
+    await runCliCommand(["generate", "--cwd", project]);
+    await writeFile(path.join(project, ".tool-call-contract/docs/search_docs.md"), "stale\n");
+
+    const result = await runCliCommand(["check", "--cwd", project]);
+
+    expect(result).toMatchObject({
+      kind: "success",
+      exitCode: 1,
+    });
+    expect(result.kind === "success" ? result.report.findings : undefined).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: "artifact.stale",
+          file: ".tool-call-contract/docs/search_docs.md",
+        }),
+      ]),
+    );
+  });
+
+  it("reports missing generated artifacts during check", async () => {
+    const project = await createConfigProject();
+    await runCliCommand(["generate", "--cwd", project]);
+    await rm(path.join(project, ".tool-call-contract/fixtures/search_docs.valid.json"));
+
+    const result = await runCliCommand(["check", "--cwd", project]);
+
+    expect(result).toMatchObject({
+      kind: "success",
+      exitCode: 1,
+    });
+    expect(result.kind === "success" ? result.report.findings : undefined).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: "artifact.stale",
+          file: ".tool-call-contract/fixtures/search_docs.valid.json",
+        }),
+      ]),
+    );
+  });
+
+  it("reports changed contract output during check", async () => {
+    const project = await createConfigProject();
+    await runCliCommand(["generate", "--cwd", project]);
+    await writeProjectConfig(project, {
+      description: "Search product documentation.",
+    });
+
+    const result = await runCliCommand(["check", "--cwd", project]);
+
+    expect(result).toMatchObject({
+      kind: "success",
+      exitCode: 1,
+    });
+    expect(result.kind === "success" ? result.report.findings : undefined).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: "artifact.stale",
+          file: ".tool-call-contract/schemas/search_docs.openai.json",
+        }),
+        expect.objectContaining({
+          id: "artifact.stale",
+          file: ".tool-call-contract/docs/search_docs.md",
+        }),
+      ]),
+    );
+  });
+
+  it("cleans stale manifest-owned files", async () => {
+    const project = await createConfigProject({ extraContract: true });
+    await runCliCommand(["generate", "--cwd", project]);
+    await writeProjectConfig(project);
+
+    const result = await runCliCommand(["generate", "--cwd", project, "--clean"]);
+
+    expect(result).toMatchObject({
+      kind: "success",
+      exitCode: 0,
+      report: {
+        artifacts: {
+          deleted: [
+            ".tool-call-contract/fixtures/create_issue.valid.json",
+            ".tool-call-contract/fixtures/create_issue.invalid.json",
+            ".tool-call-contract/schemas/create_issue.openai.json",
+            ".tool-call-contract/docs/create_issue.md",
+          ],
+        },
+      },
+    });
+    await expect(
+      fileExists(path.join(project, ".tool-call-contract/docs/create_issue.md")),
+    ).resolves.toBe(false);
+    await expect(
+      fileExists(path.join(project, ".tool-call-contract/docs/search_docs.md")),
+    ).resolves.toBe(true);
+  });
+
+  it("refuses to clean unsafe manifest paths", async () => {
+    const project = await createConfigProject();
+    const outsideFile = path.join(project, "..", "tool-call-contract-outside.txt");
+    await runCliCommand(["generate", "--cwd", project]);
+    await writeFile(outsideFile, "do not delete");
+    await writeFile(
+      path.join(project, ".tool-call-contract/manifest.json"),
+      JSON.stringify(
+        {
+          schemaVersion: 1,
+          generator: {
+            name: "tool-call-contract",
+            version: "0.0.0",
+          },
+          generatedAt: null,
+          contracts: [],
+          files: [
+            {
+              path: "../tool-call-contract-outside.txt",
+              kind: "doc",
+              hash: "unsafe",
+            },
+          ],
+        },
+        null,
+        2,
+      ),
+    );
+
+    const result = await runCliCommand(["generate", "--cwd", project, "--clean"]);
+
+    expect(result).toMatchObject({
+      kind: "success",
+      exitCode: 1,
+    });
+    expect(result.kind === "success" ? result.report.findings : undefined).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: "artifact.path-outside-out-dir",
+          file: "../tool-call-contract-outside.txt",
+        }),
+      ]),
+    );
+    await expect(readFile(outsideFile, "utf8")).resolves.toBe("do not delete");
+    await rm(outsideFile);
+  });
 });
 
 describe("runCli", () => {
@@ -386,18 +531,30 @@ function createCliOutput() {
   return output;
 }
 
-async function createConfigProject(
-  options: {
-    invalidName?: boolean;
-    missingDescription?: boolean;
-    rootStringSchema?: boolean;
-  } = {},
-): Promise<string> {
+interface ConfigProjectOptions {
+  invalidName?: boolean;
+  missingDescription?: boolean;
+  rootStringSchema?: boolean;
+  description?: string;
+  extraContract?: boolean;
+}
+
+async function createConfigProject(options: ConfigProjectOptions = {}): Promise<string> {
   const project = await mkdtemp(path.join(tmpdir(), "tool-call-contract-cli-"));
+  await writeProjectConfig(project, options);
+  return project;
+}
+
+async function writeProjectConfig(
+  project: string,
+  options: ConfigProjectOptions = {},
+): Promise<void> {
   const moduleUrl = pathToFileURL(path.resolve("src/index.ts")).href;
   const zodUrl = pathToFileURL(path.resolve("node_modules/zod/index.js")).href;
   const name = options.invalidName ? "search docs!" : "search_docs";
-  const description = options.missingDescription ? "" : "Search documentation.";
+  const description = options.missingDescription
+    ? ""
+    : (options.description ?? "Search documentation.");
   const schema = options.rootStringSchema ? "z.string()" : "z.object({ query: z.string() })";
 
   await writeFile(
@@ -415,14 +572,17 @@ const configuredSearchDocs = {
   ...searchDocs,
   description: ${JSON.stringify(description)}
 };
+const createIssue = defineToolContract({
+  name: "create_issue",
+  description: "Create an issue.",
+  input: z.object({ title: z.string() }),
+});
 
 export default defineConfig({
-  contracts: [configuredSearchDocs],
+  contracts: [configuredSearchDocs${options.extraContract ? ", createIssue" : ""}],
 });
 `,
   );
-
-  return project;
 }
 
 async function fileExists(file: string): Promise<boolean> {

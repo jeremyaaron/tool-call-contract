@@ -9,7 +9,12 @@ import {
 import path from "node:path";
 
 import { generateArtifacts } from "../artifacts.js";
-import { planArtifactWrites, writeArtifactPlan } from "../artifact-writer.js";
+import {
+  collectArtifactFreshnessFindings,
+  loadArtifactManifest,
+  planArtifactWrites,
+  writeArtifactPlan,
+} from "../artifact-writer.js";
 import { runContractChecks } from "../checks.js";
 import { ConfigLoadError, loadConfig } from "../config.js";
 import { createContractRegistry } from "../registry.js";
@@ -259,17 +264,29 @@ async function createCommandReportForParsedInput(parsed: ParsedCliCommand): Prom
       outDir: parsed.options.outDir,
     });
     const { registry, findings: registryFindings } = createContractRegistry(loaded.config);
+    const roots = {
+      cwd: loaded.cwd,
+      outDir: loaded.outDir,
+    };
 
     if (parsed.command === "generate") {
       const generation = generateArtifacts(registry, {
         outDir: path.relative(loaded.cwd, loaded.outDir),
       });
-      const plan = await planArtifactWrites(generation.artifacts, {
-        cwd: loaded.cwd,
-        outDir: loaded.outDir,
+      const previousManifest = parsed.options.clean
+        ? await loadArtifactManifest(roots)
+        : { findings: [] };
+      const plan = await planArtifactWrites(generation.artifacts, roots, {
+        clean: parsed.options.clean,
+        previousManifest: previousManifest.manifest,
       });
       const preWriteFindings = applyFindingPolicy(
-        [...registryFindings, ...generation.findings, ...plan.findings],
+        [
+          ...registryFindings,
+          ...generation.findings,
+          ...previousManifest.findings,
+          ...plan.findings,
+        ],
         parsed.options,
       );
       const writeFindings =
@@ -285,11 +302,14 @@ async function createCommandReportForParsedInput(parsed: ParsedCliCommand): Prom
       });
     }
 
+    const artifactFindings =
+      parsed.command === "check" ? await createArtifactFreshnessFindings(registry, roots) : [];
     const checkFindings =
       parsed.command === "check"
         ? [
             ...runContractChecks(registry),
             ...analyzeRegistrySchemas(registry).flatMap((analysis) => analysis.findings),
+            ...artifactFindings,
           ]
         : [];
     const findings = applyFindingPolicy([...registryFindings, ...checkFindings], parsed.options);
@@ -318,6 +338,28 @@ async function createCommandReportForParsedInput(parsed: ParsedCliCommand): Prom
 
     throw error;
   }
+}
+
+async function createArtifactFreshnessFindings(
+  registry: ReturnType<typeof createContractRegistry>["registry"],
+  roots: { cwd: string; outDir: string },
+): Promise<Finding[]> {
+  const previousManifest = await loadArtifactManifest(roots);
+
+  if (!previousManifest.manifest) {
+    return previousManifest.findings;
+  }
+
+  const generation = generateArtifacts(registry, {
+    outDir: path.relative(roots.cwd, roots.outDir),
+  });
+  const plan = await planArtifactWrites(generation.artifacts, roots);
+
+  return [
+    ...previousManifest.findings,
+    ...plan.findings,
+    ...collectArtifactFreshnessFindings(plan),
+  ];
 }
 
 function hasErrorFindings(findings: readonly Finding[]): boolean {
