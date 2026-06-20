@@ -10,6 +10,7 @@ import { runContractChecks } from "../checks.js";
 import { ConfigLoadError, loadConfig } from "../config.js";
 import { createContractRegistry } from "../registry.js";
 import type { Finding } from "../reporting.js";
+import { analyzeRegistrySchemas } from "../schema.js";
 
 export const cliHelpText = `tool-call-contract
 
@@ -254,7 +255,13 @@ async function createPlaceholderReport(parsed: ParsedCliCommand): Promise<Comman
       outDir: parsed.options.outDir,
     });
     const { registry, findings: registryFindings } = createContractRegistry(loaded.config);
-    const checkFindings = parsed.command === "check" ? runContractChecks(registry) : [];
+    const checkFindings =
+      parsed.command === "check"
+        ? [
+            ...runContractChecks(registry),
+            ...analyzeRegistrySchemas(registry).flatMap((analysis) => analysis.findings),
+          ]
+        : [];
     const findings = applyFindingPolicy([...registryFindings, ...checkFindings], parsed.options);
 
     return createCommandReport({

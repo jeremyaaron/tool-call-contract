@@ -29,5 +29,15 @@ export {
 export { ConfigLoadError, defaultConfigFiles, loadConfig, type LoadedConfig } from "./config.js";
 export { createContractRegistry, type ContractRegistry } from "./registry.js";
 export { runContractChecks } from "./checks.js";
+export {
+  analyzeContractSchema,
+  analyzeRegistrySchemas,
+  exportOpenAITool,
+  exportOpenAITools,
+  type JsonObject,
+  type OpenAIToolDefinition,
+  type OpenAIToolExport,
+  type SchemaAnalysis,
+} from "./schema.js";
 
 export const version = "0.0.0";

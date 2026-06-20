@@ -178,6 +178,22 @@ describe("runCliCommand", () => {
       },
     });
   });
+
+  it("reports schema analysis findings during check", async () => {
+    const project = await createConfigProject({ rootStringSchema: true });
+
+    await expect(runCliCommand(["check", "--cwd", project])).resolves.toMatchObject({
+      kind: "success",
+      exitCode: 1,
+      report: {
+        findings: [
+          {
+            id: "schema.root-not-object",
+          },
+        ],
+      },
+    });
+  });
 });
 
 describe("runCli", () => {
@@ -235,6 +251,7 @@ async function createConfigProject(
   options: {
     invalidName?: boolean;
     missingDescription?: boolean;
+    rootStringSchema?: boolean;
   } = {},
 ): Promise<string> {
   const project = await mkdtemp(path.join(tmpdir(), "tool-call-contract-cli-"));
@@ -242,6 +259,7 @@ async function createConfigProject(
   const zodUrl = pathToFileURL(path.resolve("node_modules/zod/index.js")).href;
   const name = options.invalidName ? "search docs!" : "search_docs";
   const description = options.missingDescription ? "" : "Search documentation.";
+  const schema = options.rootStringSchema ? "z.string()" : "z.object({ query: z.string() })";
 
   await writeFile(
     path.join(project, "tool-call-contract.config.ts"),
@@ -252,7 +270,7 @@ import { defineConfig, defineToolContract } from "${moduleUrl}";
 const searchDocs = defineToolContract({
   name: ${JSON.stringify(name)},
   description: "Search documentation.",
-  input: z.object({ query: z.string() }),
+  input: ${schema},
 });
 const configuredSearchDocs = {
   ...searchDocs,
