@@ -6,6 +6,6 @@ export default defineConfig({
   entry: ["src/index.ts", "src/cli/index.ts"],
   format: ["esm"],
   splitting: false,
-  sourcemap: true,
+  sourcemap: false,
   target: "node20",
 });

@@ -199,6 +199,22 @@ The example defines three contracts and includes valid, invalid, and OpenAI-styl
 
 The CLI loads `tool-call-contract.config.ts` as code. Treat config files as trusted project code, the same way you would treat `vite.config.ts`, `eslint.config.js`, or a test setup file. Do not run the CLI against untrusted repositories or unreviewed config files.
 
+## Release Verification
+
+Before publishing, run:
+
+```sh
+npm run verify:release
+```
+
+This verifies linting, formatting, types, tests, build output, package metadata, packed contents, and installation into a temporary project. First publication requires an interactive npm publish:
+
+```sh
+npm publish --auth-type=web
+```
+
+After the package exists on npm, tagged releases can use GitHub trusted publishing. See [release docs](docs/release.md).
+
 ## Known Limitations
 
 - Zod schemas must be representable as JSON Schema for generated docs and OpenAI schema output.
@@ -213,3 +229,4 @@ The CLI loads `tool-call-contract.config.ts` as code. Treat config files as trus
 - [PRD](docs/prd.md)
 - [Technical design](docs/technical-design.md)
 - [Implementation plan](docs/implementation-plan.md)
+- [Release](docs/release.md)
