@@ -124,10 +124,16 @@ export function renderHumanReport(report: CommandReport): string {
       lines.push("");
       if (result.ok) {
         lines.push(`valid ${result.contractName}`);
+        if (result.file) {
+          lines.push(`  File: ${result.file}`);
+        }
         continue;
       }
 
       lines.push(`invalid ${result.contractName ?? result.call?.name ?? "unknown"}`);
+      if (result.file) {
+        lines.push(`  File: ${result.file}`);
+      }
       for (const issue of result.issues) {
         const path = issue.path && issue.path.length > 0 ? ` at ${issue.path.join(".")}` : "";
         lines.push(`  ${issue.code}${path}: ${issue.message}`);

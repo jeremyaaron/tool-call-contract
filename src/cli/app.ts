@@ -20,6 +20,7 @@ import { ConfigLoadError, loadConfig } from "../config.js";
 import { createContractRegistry } from "../registry.js";
 import type { Finding } from "../reporting.js";
 import { analyzeRegistrySchemas } from "../schema.js";
+import { validateCaptureFiles } from "./validate.js";
 
 export const cliHelpText = `tool-call-contract
 
@@ -299,6 +300,24 @@ async function createCommandReportForParsedInput(parsed: ParsedCliCommand): Prom
         command: parsed.command,
         findings,
         artifacts: plan.artifacts,
+      });
+    }
+
+    if (parsed.command === "validate") {
+      const validation = await validateCaptureFiles(registry, {
+        cwd: loaded.cwd,
+        files: parsed.files,
+        allowUnknown: parsed.options.allowUnknown,
+      });
+      const findings = applyFindingPolicy(
+        [...registryFindings, ...validation.findings],
+        parsed.options,
+      );
+
+      return createCommandReport({
+        command: parsed.command,
+        findings,
+        results: validation.results,
       });
     }
 

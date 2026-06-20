@@ -466,6 +466,295 @@ describe("runCliCommand", () => {
     await expect(readFile(outsideFile, "utf8")).resolves.toBe("do not delete");
     await rm(outsideFile);
   });
+
+  it("validates captured tool calls", async () => {
+    const project = await createConfigProject();
+    await writeJson(path.join(project, "valid.json"), {
+      name: "search_docs",
+      arguments: {
+        query: "fixtures",
+      },
+    });
+
+    await expect(
+      runCliCommand(["validate", "--cwd", project, "valid.json"]),
+    ).resolves.toMatchObject({
+      kind: "success",
+      exitCode: 0,
+      report: {
+        results: [
+          {
+            ok: true,
+            contractName: "search_docs",
+            file: "valid.json",
+            value: {
+              query: "fixtures",
+            },
+          },
+        ],
+      },
+    });
+  });
+
+  it("reports invalid captured tool calls", async () => {
+    const project = await createConfigProject();
+    await writeJson(path.join(project, "invalid.json"), {
+      name: "search_docs",
+      arguments: {
+        limit: 3,
+      },
+    });
+
+    const result = await runCliCommand(["validate", "--cwd", project, "invalid.json"]);
+
+    expect(result).toMatchObject({
+      kind: "success",
+      exitCode: 1,
+      report: {
+        results: [
+          {
+            ok: false,
+            contractName: "search_docs",
+            file: "invalid.json",
+            issues: [
+              {
+                code: "schema.required-field-missing",
+                path: ["query"],
+              },
+            ],
+          },
+        ],
+      },
+    });
+  });
+
+  it("reports malformed capture files", async () => {
+    const project = await createConfigProject();
+    await writeFile(path.join(project, "malformed.json"), "{ nope");
+
+    await expect(
+      runCliCommand(["validate", "--cwd", project, "malformed.json"]),
+    ).resolves.toMatchObject({
+      kind: "success",
+      exitCode: 1,
+      report: {
+        results: [
+          {
+            ok: false,
+            file: "malformed.json",
+            issues: [
+              {
+                code: "file.invalid-json",
+              },
+            ],
+          },
+        ],
+      },
+    });
+  });
+
+  it("validates multiple capture files in argument order", async () => {
+    const project = await createConfigProject();
+    await writeJson(path.join(project, "one.json"), {
+      calls: [
+        {
+          toolName: "search_docs",
+          args: {
+            query: "schema",
+          },
+        },
+      ],
+    });
+    await writeJson(path.join(project, "two.json"), [
+      {
+        name: "search_docs",
+        arguments: {
+          query: "exports",
+        },
+      },
+    ]);
+
+    const result = await runCliCommand(["validate", "--cwd", project, "one.json", "two.json"]);
+
+    expect(result).toMatchObject({
+      kind: "success",
+      exitCode: 0,
+      report: {
+        summary: {
+          validResults: 2,
+          invalidResults: 0,
+        },
+        results: [
+          {
+            ok: true,
+            file: "one.json",
+          },
+          {
+            ok: true,
+            file: "two.json",
+          },
+        ],
+      },
+    });
+  });
+
+  it("reports unknown captured tools", async () => {
+    const project = await createConfigProject();
+    await writeJson(path.join(project, "unknown.json"), {
+      name: "create_issue",
+      arguments: {
+        title: "Bug",
+      },
+    });
+
+    await expect(
+      runCliCommand(["validate", "--cwd", project, "unknown.json"]),
+    ).resolves.toMatchObject({
+      kind: "success",
+      exitCode: 1,
+      report: {
+        results: [
+          {
+            ok: false,
+            file: "unknown.json",
+            call: {
+              name: "create_issue",
+            },
+            issues: [
+              {
+                code: "call.unknown-tool",
+              },
+            ],
+          },
+        ],
+      },
+    });
+  });
+
+  it("allows unknown captured tools when requested", async () => {
+    const project = await createConfigProject();
+    await writeJson(path.join(project, "unknown.json"), {
+      name: "create_issue",
+      arguments: {
+        title: "Bug",
+      },
+    });
+
+    await expect(
+      runCliCommand(["validate", "--cwd", project, "--allow-unknown", "unknown.json"]),
+    ).resolves.toMatchObject({
+      kind: "success",
+      exitCode: 0,
+      report: {
+        findings: [
+          {
+            id: "call.unknown-tool",
+            severity: "warning",
+            file: "unknown.json",
+          },
+        ],
+        summary: {
+          warnings: 1,
+          invalidResults: 0,
+        },
+      },
+    });
+  });
+
+  it("reports unsupported capture shapes", async () => {
+    const project = await createConfigProject();
+    await writeJson(path.join(project, "unsupported.json"), {
+      message: "not a tool call",
+    });
+
+    await expect(
+      runCliCommand(["validate", "--cwd", project, "unsupported.json"]),
+    ).resolves.toMatchObject({
+      kind: "success",
+      exitCode: 1,
+      report: {
+        results: [
+          {
+            ok: false,
+            file: "unsupported.json",
+            issues: [
+              {
+                code: "call.unsupported-shape",
+              },
+            ],
+          },
+        ],
+      },
+    });
+  });
+
+  it("validates OpenAI-style captures", async () => {
+    const project = await createConfigProject();
+    await writeJson(path.join(project, "openai-chat.json"), {
+      choices: [
+        {
+          message: {
+            tool_calls: [
+              {
+                id: "call_123",
+                function: {
+                  name: "search_docs",
+                  arguments: JSON.stringify({
+                    query: "chat completions",
+                  }),
+                },
+              },
+            ],
+          },
+        },
+      ],
+    });
+    await writeJson(path.join(project, "openai-responses.json"), {
+      output: [
+        {
+          type: "function_call",
+          call_id: "call_456",
+          name: "search_docs",
+          arguments: JSON.stringify({
+            query: "responses",
+          }),
+        },
+      ],
+    });
+
+    const result = await runCliCommand([
+      "validate",
+      "--cwd",
+      project,
+      "openai-chat.json",
+      "openai-responses.json",
+    ]);
+
+    expect(result).toMatchObject({
+      kind: "success",
+      exitCode: 0,
+      report: {
+        results: [
+          {
+            ok: true,
+            file: "openai-chat.json",
+            call: {
+              id: "call_123",
+              source: "openai-chat",
+            },
+          },
+          {
+            ok: true,
+            file: "openai-responses.json",
+            call: {
+              id: "call_456",
+              source: "openai-responses",
+            },
+          },
+        ],
+      },
+    });
+  });
 });
 
 describe("runCli", () => {
@@ -511,6 +800,41 @@ describe("runCli", () => {
     expect(exitCode).toBe(2);
     expect(output.stdout).toBe("");
     expect(output.stderr).toBe("validate requires at least one file.\n");
+  });
+
+  it("prints deterministic JSON validation output", async () => {
+    const project = await createConfigProject();
+    const output = createCliOutput();
+    await writeJson(path.join(project, "valid.json"), {
+      name: "search_docs",
+      arguments: {
+        query: "json reporter",
+      },
+    });
+
+    const exitCode = await runCli(
+      ["validate", "--cwd", project, "--json", "valid.json"],
+      output.io,
+    );
+
+    expect(exitCode).toBe(0);
+    expect(JSON.parse(output.stdout)).toMatchObject({
+      schemaVersion: 1,
+      command: "validate",
+      success: true,
+      summary: {
+        validResults: 1,
+        invalidResults: 0,
+      },
+      results: [
+        {
+          ok: true,
+          file: "valid.json",
+          contractName: "search_docs",
+        },
+      ],
+    });
+    expect(output.stderr).toBe("");
   });
 });
 
@@ -592,4 +916,8 @@ async function fileExists(file: string): Promise<boolean> {
   } catch {
     return false;
   }
+}
+
+async function writeJson(file: string, value: unknown): Promise<void> {
+  await writeFile(file, `${JSON.stringify(value, null, 2)}\n`);
 }

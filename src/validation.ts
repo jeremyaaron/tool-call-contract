@@ -23,12 +23,14 @@ export type ToolCallValidationResult<T = unknown> =
       contractName: string;
       value: T;
       call: NormalizedToolCall;
+      file?: string;
     }
   | {
       ok: false;
       contractName?: string;
       call?: NormalizedToolCall;
       issues: ToolCallIssue[];
+      file?: string;
     };
 
 interface NormalizeResult {
