@@ -59,7 +59,7 @@ export function generateArtifacts(
   options: ArtifactGenerationOptions = {},
 ): ArtifactGenerationResult {
   const outDir = normalizeOutputDir(options.outDir ?? ".tool-call-contract");
-  const version = options.version ?? "0.1.0";
+  const version = options.version ?? "0.1.1";
   const contractSets = registry.contracts.map((contract) =>
     generateContractArtifacts(contract, registry.examplesByName.get(contract.name) ?? [], outDir),
   );

@@ -1,16 +1,20 @@
-import { readFile, rm } from "node:fs/promises";
+import { cp, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import path from "node:path";
+import { pathToFileURL } from "node:url";
 
 import { describe, expect, it } from "vitest";
 
 import { runCliCommand } from "../src/cli/app.js";
 
-const exampleProject = path.resolve("examples/basic");
-const generatedDir = path.join(exampleProject, ".tool-call-contract");
+const exampleFixture = path.resolve("examples/basic");
 
 describe("basic example project", () => {
   it("checks, generates, checks freshness, and validates captures", async () => {
-    await rm(generatedDir, { recursive: true, force: true });
+    const exampleProject = await mkdtemp(path.join(tmpdir(), "tool-call-contract-example-"));
+    const generatedDir = path.join(exampleProject, ".tool-call-contract");
+    await cp(exampleFixture, exampleProject, { recursive: true });
+    await rewriteExampleConfigImport(exampleProject);
 
     try {
       await expect(runCliCommand(["check", "--cwd", exampleProject])).resolves.toMatchObject({
@@ -73,7 +77,19 @@ describe("basic example project", () => {
         },
       });
     } finally {
-      await rm(generatedDir, { recursive: true, force: true });
+      await rm(exampleProject, { recursive: true, force: true });
     }
   });
 });
+
+async function rewriteExampleConfigImport(exampleProject: string): Promise<void> {
+  const configPath = path.join(exampleProject, "tool-call-contract.config.ts");
+  const sourceUrl = pathToFileURL(path.resolve("src/index.ts")).href;
+  const zodUrl = pathToFileURL(path.resolve("node_modules/zod/index.js")).href;
+  const config = await readFile(configPath, "utf8");
+
+  await writeFile(
+    configPath,
+    config.replace('"zod"', JSON.stringify(zodUrl)).replace("../../src/index.ts", sourceUrl),
+  );
+}
