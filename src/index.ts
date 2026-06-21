@@ -76,4 +76,4 @@ export {
   type PlannedArtifactWrite,
 } from "./artifact-writer.js";
 
-export const version = "0.1.0";
+export const version = "0.1.1";

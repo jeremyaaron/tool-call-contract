@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.1.1
+
+Maintenance patch.
+
+- Upgraded `pkg-guard` to exercise improved workflow script analysis in a real consumer.
+- Isolated the example end-to-end test by copying `examples/basic` into a temporary project before generating artifacts.
+
 ## 0.1.0
 
 Initial MVP release.

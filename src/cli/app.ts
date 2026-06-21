@@ -120,7 +120,7 @@ export async function runCliCommand(args: readonly string[]): Promise<CliRunResu
     return {
       kind: "output",
       exitCode: 0,
-      text: "0.1.0\n",
+      text: "0.1.1\n",
     };
   }
 
