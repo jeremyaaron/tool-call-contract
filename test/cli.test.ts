@@ -791,6 +791,32 @@ describe("runCliCommand", () => {
           validResults: 1,
           invalidResults: 0,
         },
+        validation: {
+          suites: [
+            {
+              name: "smoke",
+              files: ["captures/smoke/search.json"],
+              validResults: 1,
+              invalidResults: 0,
+            },
+          ],
+          files: [
+            {
+              path: "captures/smoke/search.json",
+              suiteNames: ["smoke"],
+              validResults: 1,
+              invalidResults: 0,
+            },
+          ],
+          contracts: [
+            {
+              name: "search_docs",
+              validResults: 1,
+              invalidResults: 0,
+              unknownResults: 0,
+            },
+          ],
+        },
         results: [
           {
             ok: true,
@@ -989,6 +1015,25 @@ describe("runCli", () => {
         validResults: 1,
         invalidResults: 0,
       },
+      validation: {
+        suites: [],
+        files: [
+          {
+            path: "valid.json",
+            suiteNames: [],
+            validResults: 1,
+            invalidResults: 0,
+          },
+        ],
+        contracts: [
+          {
+            name: "search_docs",
+            validResults: 1,
+            invalidResults: 0,
+            unknownResults: 0,
+          },
+        ],
+      },
       results: [
         {
           ok: true,
@@ -997,6 +1042,30 @@ describe("runCli", () => {
         },
       ],
     });
+    expect(output.stderr).toBe("");
+  });
+
+  it("prints human validation grouping for suite runs", async () => {
+    const project = await createConfigProject({
+      captures: {
+        smoke: ["captures/smoke/*.json"],
+      },
+    });
+    const output = createCliOutput();
+    await writeJson(path.join(project, "captures/smoke/search.json"), {
+      name: "search_docs",
+      arguments: {
+        query: "human",
+      },
+    });
+
+    const exitCode = await runCli(["validate", "--cwd", project, "--suite", "smoke"], output.io);
+
+    expect(exitCode).toBe(0);
+    expect(output.stdout).toContain("Validation suites:\n  smoke: 1 file(s), 1 valid, 0 invalid");
+    expect(output.stdout).toContain(
+      "Validation files:\n  captures/smoke/search.json: smoke, 1 valid, 0 invalid",
+    );
     expect(output.stderr).toBe("");
   });
 });

@@ -18,6 +18,7 @@ export {
 } from "./validation.js";
 export {
   createCommandReport,
+  createValidationReportMetadata,
   hasBlockingFailures,
   renderHumanReport,
   renderJsonReport,
@@ -27,6 +28,7 @@ export {
   type Finding,
   type ReportSummary,
   type Severity,
+  type ValidationReportMetadata,
 } from "./reporting.js";
 export { ConfigLoadError, defaultConfigFiles, loadConfig, type LoadedConfig } from "./config.js";
 export { createContractRegistry, type ContractRegistry } from "./registry.js";

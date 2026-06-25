@@ -1,5 +1,6 @@
 import {
   createCommandReport,
+  createValidationReportMetadata,
   hasBlockingFailures,
   renderHumanReport,
   renderJsonReport,
@@ -337,6 +338,11 @@ async function createCommandReportForParsedInput(parsed: ParsedCliCommand): Prom
         command: parsed.command,
         findings,
         results: validation.results,
+        validation: createValidationReportMetadata({
+          suites: parsed.options.suites,
+          files: captures.files,
+          results: validation.results,
+        }),
       });
     }
 
