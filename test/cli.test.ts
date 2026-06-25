@@ -10,7 +10,7 @@ import { parseCliArgs, runCli, runCliCommand } from "../src/cli/app.js";
 
 describe("package scaffold", () => {
   it("exports the package version", () => {
-    expect(version).toBe("0.1.1");
+    expect(version).toBe("0.2.0");
   });
 });
 
@@ -181,7 +181,7 @@ describe("runCliCommand", () => {
     await expect(runCliCommand(["--version"])).resolves.toEqual({
       kind: "output",
       exitCode: 0,
-      text: "0.1.1\n",
+      text: "0.2.0\n",
     });
   });
 
@@ -512,7 +512,7 @@ describe("runCliCommand", () => {
           schemaVersion: 1,
           generator: {
             name: "tool-call-contract",
-            version: "0.1.1",
+            version: "0.2.0",
           },
           generatedAt: null,
           contracts: [],

@@ -1,0 +1,12 @@
+{
+  "name": "create_issue",
+  "arguments": {
+    "title": "Billing export duplicates rows",
+    "body": "Customer reports duplicate rows in the monthly CSV export.",
+    "priority": "high",
+    "email": "[REDACTED]"
+  },
+  "metadata": {
+    "authorization": "[REDACTED]"
+  }
+}

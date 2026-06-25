@@ -10,7 +10,7 @@ import { runCliCommand } from "../src/cli/app.js";
 const exampleFixture = path.resolve("examples/basic");
 
 describe("basic example project", () => {
-  it("checks, generates, checks freshness, and validates captures", async () => {
+  it("checks, generates, validates suites, redacts, and generates regression tests", async () => {
     const exampleProject = await mkdtemp(path.join(tmpdir(), "tool-call-contract-example-"));
     const generatedDir = path.join(exampleProject, ".tool-call-contract");
     await cp(exampleFixture, exampleProject, { recursive: true });
@@ -47,6 +47,27 @@ describe("basic example project", () => {
       });
 
       await expect(
+        runCliCommand(["validate", "--cwd", exampleProject, "--suite", "smoke"]),
+      ).resolves.toMatchObject({
+        kind: "success",
+        exitCode: 0,
+        report: {
+          summary: {
+            validResults: 1,
+            invalidResults: 0,
+          },
+          validation: {
+            suites: [
+              {
+                name: "smoke",
+                files: ["captures/smoke/search.json"],
+              },
+            ],
+          },
+        },
+      });
+
+      await expect(
         runCliCommand([
           "validate",
           "--cwd",
@@ -64,6 +85,42 @@ describe("basic example project", () => {
           },
         },
       });
+
+      await expect(
+        runCliCommand(["redact", "--cwd", exampleProject, "--check", "--suite", "regression"]),
+      ).resolves.toMatchObject({
+        kind: "success",
+        exitCode: 0,
+        report: {
+          redaction: {
+            checked: true,
+            files: [
+              {
+                path: "captures/regression/create-issue-redacted.json",
+                changed: false,
+                replacements: 0,
+              },
+            ],
+          },
+        },
+      });
+
+      await expect(
+        runCliCommand(["generate-tests", "--cwd", exampleProject, "--suite", "regression"]),
+      ).resolves.toMatchObject({
+        kind: "success",
+        exitCode: 0,
+        report: {
+          generatedTests: {
+            outFile: "test/tool-call-contract.generated.test.ts",
+            captureFiles: ["captures/regression/create-issue-redacted.json"],
+            created: true,
+          },
+        },
+      });
+      await expect(
+        readFile(path.join(exampleProject, "test/tool-call-contract.generated.test.ts"), "utf8"),
+      ).resolves.toContain('label: "captures/regression/create-issue-redacted.json"');
 
       await expect(
         runCliCommand(["validate", "--cwd", exampleProject, "captures/invalid.json"]),

@@ -41,4 +41,11 @@ const summarizeThread = defineToolContract({
 
 export default defineConfig({
   contracts: [searchKnowledgeBase, createIssue, summarizeThread],
+  captures: {
+    smoke: ["captures/smoke/*.json"],
+    regression: ["captures/regression/*.json"],
+  },
+  redaction: {
+    paths: ["arguments.email", "metadata.authorization"],
+  },
 });
