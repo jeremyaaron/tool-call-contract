@@ -27,6 +27,7 @@ export {
   type CommandReport,
   type Finding,
   type ReportSummary,
+  type RedactionReportMetadata,
   type Severity,
   type ValidationReportMetadata,
 } from "./reporting.js";

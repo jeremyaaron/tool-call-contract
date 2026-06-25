@@ -15,7 +15,7 @@ export interface Finding {
   path?: string;
 }
 
-export type CommandName = "check" | "generate" | "validate";
+export type CommandName = "check" | "generate" | "validate" | "redact";
 
 export interface ReportSummary {
   errors: number;
@@ -33,6 +33,7 @@ export interface CommandReport {
   findings?: Finding[];
   results?: ToolCallValidationResult[];
   validation?: ValidationReportMetadata;
+  redaction?: RedactionReportMetadata;
   artifacts?: {
     created: string[];
     updated: string[];
@@ -62,12 +63,24 @@ export interface ValidationReportMetadata {
   }>;
 }
 
+export interface RedactionReportMetadata {
+  checked: boolean;
+  dryRun: boolean;
+  files: Array<{
+    path: string;
+    destination?: string;
+    changed: boolean;
+    replacements: number;
+  }>;
+}
+
 export function createCommandReport(input: {
   command: CommandName;
   findings?: readonly Finding[];
   results?: readonly ToolCallValidationResult[];
   success?: boolean;
   validation?: ValidationReportMetadata;
+  redaction?: RedactionReportMetadata;
   artifacts?: CommandReport["artifacts"];
 }): CommandReport {
   const findings = [...(input.findings ?? [])];
@@ -83,6 +96,7 @@ export function createCommandReport(input: {
     ...(findings.length > 0 ? { findings } : {}),
     ...(results.length > 0 ? { results } : {}),
     ...(input.validation ? { validation: input.validation } : {}),
+    ...(input.redaction ? { redaction: input.redaction } : {}),
     ...(input.artifacts ? { artifacts: input.artifacts } : {}),
   };
 }
@@ -140,9 +154,10 @@ export function renderHumanReport(report: CommandReport): string {
   const findings = report.findings ?? [];
   const results = report.results ?? [];
   const validation = report.validation;
+  const redaction = report.redaction;
   const artifacts = report.artifacts;
 
-  if (findings.length === 0 && results.length === 0 && !validation && !artifacts) {
+  if (findings.length === 0 && results.length === 0 && !validation && !redaction && !artifacts) {
     lines.push("No findings.");
     return `${lines.join("\n")}\n`;
   }
@@ -215,6 +230,10 @@ export function renderHumanReport(report: CommandReport): string {
     pushArtifactPaths(lines, "Updated", artifacts.updated);
     pushArtifactPaths(lines, "Unchanged", artifacts.unchanged);
     pushArtifactPaths(lines, "Deleted", artifacts.deleted);
+  }
+
+  if (redaction) {
+    pushRedactionMetadata(lines, redaction);
   }
 
   return `${lines.join("\n")}\n`;
@@ -358,5 +377,20 @@ function pushValidationMetadata(lines: string[], validation: ValidationReportMet
     }
 
     lines.push("");
+  }
+}
+
+function pushRedactionMetadata(lines: string[], redaction: RedactionReportMetadata): void {
+  const changed = redaction.files.filter((file) => file.changed).length;
+  const unchanged = redaction.files.length - changed;
+  const mode = redaction.checked ? " check" : redaction.dryRun ? " dry run" : "";
+
+  lines.push(`Redaction${mode}: ${changed} changed, ${unchanged} unchanged.`);
+
+  for (const file of redaction.files) {
+    const state = file.changed ? "changed" : "unchanged";
+    const destination =
+      file.destination && file.destination !== file.path ? ` -> ${file.destination}` : "";
+    lines.push(`  ${state} ${file.path}${destination}: ${file.replacements} replacement(s)`);
   }
 }

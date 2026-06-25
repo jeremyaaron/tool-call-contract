@@ -22,6 +22,7 @@ import { ConfigLoadError, loadConfig } from "../config.js";
 import { createContractRegistry } from "../registry.js";
 import type { Finding } from "../reporting.js";
 import { analyzeRegistrySchemas } from "../schema.js";
+import { redactCaptureFiles } from "./redact.js";
 import { validateCaptureFiles } from "./validate.js";
 
 export const cliHelpText = `tool-call-contract
@@ -35,6 +36,7 @@ Commands:
   check                 Validate configured tool contracts
   generate              Generate fixtures, schemas, docs, and manifest
   validate <files...>   Validate captured tool-call JSON files
+  redact <files...>     Redact captured tool-call JSON files
 
 Options:
   -h, --help            Show help
@@ -58,6 +60,8 @@ export interface CliOptions {
   ignore: string[];
   dryRun: boolean;
   clean: boolean;
+  check: boolean;
+  out?: string;
   outDir?: string;
   allowUnknown: boolean;
   suites: string[];
@@ -93,6 +97,7 @@ const defaultOptions: CliOptions = {
   ignore: [],
   dryRun: false,
   clean: false,
+  check: false,
   allowUnknown: false,
   suites: [],
 };
@@ -213,6 +218,15 @@ export function parseCliArgs(args: readonly string[]): ParsedCliCommand | { mess
         index = value.index;
         break;
       }
+      case "--out": {
+        const value = readOptionValue(rest, index, arg);
+        if ("message" in value) {
+          return value;
+        }
+        options.out = value.value;
+        index = value.index;
+        break;
+      }
       case "--json":
         options.json = true;
         break;
@@ -224,6 +238,9 @@ export function parseCliArgs(args: readonly string[]): ParsedCliCommand | { mess
         break;
       case "--clean":
         options.clean = true;
+        break;
+      case "--check":
+        options.check = true;
         break;
       case "--allow-unknown":
         options.allowUnknown = true;
@@ -262,6 +279,13 @@ export function parseCliArgs(args: readonly string[]): ParsedCliCommand | { mess
     return {
       message: "validate requires at least one file or --suite.",
     };
+  }
+
+  if (commandToken === "redact") {
+    const usage = validateRedactUsage(files, options);
+    if (usage) {
+      return usage;
+    }
   }
 
   return {
@@ -343,6 +367,34 @@ async function createCommandReportForParsedInput(parsed: ParsedCliCommand): Prom
           files: captures.files,
           results: validation.results,
         }),
+      });
+    }
+
+    if (parsed.command === "redact") {
+      const captures = await resolveCaptureFiles({
+        cwd: loaded.cwd,
+        captures: loaded.config.captures,
+        suites: parsed.options.suites,
+        files: parsed.files,
+      });
+      const redaction = await redactCaptureFiles({
+        cwd: loaded.cwd,
+        files: captures.files,
+        redaction: loaded.config.redaction,
+        check: parsed.options.check,
+        dryRun: parsed.options.dryRun,
+        out: parsed.options.out,
+        outDir: parsed.options.outDir,
+      });
+      const findings = applyFindingPolicy(
+        [...captures.findings, ...redaction.findings],
+        parsed.options,
+      );
+
+      return createCommandReport({
+        command: parsed.command,
+        findings,
+        redaction: redaction.redaction,
       });
     }
 
@@ -469,7 +521,38 @@ function readOptionValue(
 }
 
 function isCommandName(value: unknown): value is CommandName {
-  return value === "check" || value === "generate" || value === "validate";
+  return value === "check" || value === "generate" || value === "validate" || value === "redact";
+}
+
+function validateRedactUsage(
+  files: readonly string[],
+  options: CliOptions,
+): { message: string } | undefined {
+  if (files.length === 0 && options.suites.length === 0) {
+    return {
+      message: "redact requires at least one file or --suite.",
+    };
+  }
+
+  if (options.out && options.outDir) {
+    return {
+      message: "--out and --out-dir cannot be used together.",
+    };
+  }
+
+  if (options.check && (options.out || options.outDir)) {
+    return {
+      message: "--check cannot be used with --out or --out-dir.",
+    };
+  }
+
+  if (options.out && (files.length !== 1 || options.suites.length > 0)) {
+    return {
+      message: "--out requires exactly one direct file.",
+    };
+  }
+
+  return undefined;
 }
 
 const consoleIo: CliIo = {

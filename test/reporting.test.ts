@@ -283,6 +283,37 @@ describe("reporters", () => {
     );
   });
 
+  it("renders redaction summaries", () => {
+    const report = createCommandReport({
+      command: "redact",
+      redaction: {
+        checked: false,
+        dryRun: false,
+        files: [
+          {
+            path: "captures/raw.json",
+            destination: "captures/safe/raw.json",
+            changed: true,
+            replacements: 2,
+          },
+          {
+            path: "captures/safe.json",
+            changed: false,
+            replacements: 0,
+          },
+        ],
+      },
+    });
+
+    expect(renderHumanReport(report)).toContain(
+      [
+        "Redaction: 1 changed, 1 unchanged.",
+        "  changed captures/raw.json -> captures/safe/raw.json: 2 replacement(s)",
+        "  unchanged captures/safe.json: 0 replacement(s)",
+      ].join("\n"),
+    );
+  });
+
   it("renders stable JSON", () => {
     expect(JSON.parse(renderJsonReport(createCommandReport({ command: "generate" })))).toEqual({
       schemaVersion: 1,
