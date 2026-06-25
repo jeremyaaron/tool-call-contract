@@ -15,7 +15,7 @@ export interface Finding {
   path?: string;
 }
 
-export type CommandName = "check" | "generate" | "validate" | "redact";
+export type CommandName = "check" | "generate" | "validate" | "redact" | "generate-tests";
 
 export interface ReportSummary {
   errors: number;
@@ -34,6 +34,7 @@ export interface CommandReport {
   results?: ToolCallValidationResult[];
   validation?: ValidationReportMetadata;
   redaction?: RedactionReportMetadata;
+  generatedTests?: GeneratedTestReportMetadata;
   artifacts?: {
     created: string[];
     updated: string[];
@@ -74,6 +75,15 @@ export interface RedactionReportMetadata {
   }>;
 }
 
+export interface GeneratedTestReportMetadata {
+  outFile: string;
+  dryRun: boolean;
+  captureFiles: string[];
+  created: boolean;
+  updated: boolean;
+  unchanged: boolean;
+}
+
 export function createCommandReport(input: {
   command: CommandName;
   findings?: readonly Finding[];
@@ -81,6 +91,7 @@ export function createCommandReport(input: {
   success?: boolean;
   validation?: ValidationReportMetadata;
   redaction?: RedactionReportMetadata;
+  generatedTests?: GeneratedTestReportMetadata;
   artifacts?: CommandReport["artifacts"];
 }): CommandReport {
   const findings = [...(input.findings ?? [])];
@@ -97,6 +108,7 @@ export function createCommandReport(input: {
     ...(results.length > 0 ? { results } : {}),
     ...(input.validation ? { validation: input.validation } : {}),
     ...(input.redaction ? { redaction: input.redaction } : {}),
+    ...(input.generatedTests ? { generatedTests: input.generatedTests } : {}),
     ...(input.artifacts ? { artifacts: input.artifacts } : {}),
   };
 }
@@ -155,9 +167,17 @@ export function renderHumanReport(report: CommandReport): string {
   const results = report.results ?? [];
   const validation = report.validation;
   const redaction = report.redaction;
+  const generatedTests = report.generatedTests;
   const artifacts = report.artifacts;
 
-  if (findings.length === 0 && results.length === 0 && !validation && !redaction && !artifacts) {
+  if (
+    findings.length === 0 &&
+    results.length === 0 &&
+    !validation &&
+    !redaction &&
+    !generatedTests &&
+    !artifacts
+  ) {
     lines.push("No findings.");
     return `${lines.join("\n")}\n`;
   }
@@ -234,6 +254,10 @@ export function renderHumanReport(report: CommandReport): string {
 
   if (redaction) {
     pushRedactionMetadata(lines, redaction);
+  }
+
+  if (generatedTests) {
+    pushGeneratedTestMetadata(lines, generatedTests);
   }
 
   return `${lines.join("\n")}\n`;
@@ -393,4 +417,19 @@ function pushRedactionMetadata(lines: string[], redaction: RedactionReportMetada
       file.destination && file.destination !== file.path ? ` -> ${file.destination}` : "";
     lines.push(`  ${state} ${file.path}${destination}: ${file.replacements} replacement(s)`);
   }
+}
+
+function pushGeneratedTestMetadata(
+  lines: string[],
+  generatedTests: GeneratedTestReportMetadata,
+): void {
+  const state = generatedTests.created
+    ? "created"
+    : generatedTests.updated
+      ? "updated"
+      : "unchanged";
+  const suffix = generatedTests.dryRun ? " (dry run)" : "";
+
+  lines.push(`Generated test: ${generatedTests.outFile} ${state}${suffix}.`);
+  lines.push(`  Captures: ${generatedTests.captureFiles.length} file(s)`);
 }

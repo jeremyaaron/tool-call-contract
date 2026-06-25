@@ -314,6 +314,27 @@ describe("reporters", () => {
     );
   });
 
+  it("renders generated test summaries", () => {
+    const report = createCommandReport({
+      command: "generate-tests",
+      generatedTests: {
+        outFile: "test/tool-call-contract.generated.test.ts",
+        dryRun: false,
+        captureFiles: ["captures/regression/create.json", "captures/smoke/search.json"],
+        created: true,
+        updated: false,
+        unchanged: false,
+      },
+    });
+
+    expect(renderHumanReport(report)).toContain(
+      [
+        "Generated test: test/tool-call-contract.generated.test.ts created.",
+        "  Captures: 2 file(s)",
+      ].join("\n"),
+    );
+  });
+
   it("renders stable JSON", () => {
     expect(JSON.parse(renderJsonReport(createCommandReport({ command: "generate" })))).toEqual({
       schemaVersion: 1,

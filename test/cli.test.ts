@@ -98,6 +98,27 @@ describe("parseCliArgs", () => {
     });
   });
 
+  it("parses generate-tests options", () => {
+    expect(
+      parseCliArgs([
+        "generate-tests",
+        "--suite",
+        "regression",
+        "--out",
+        "tests/generated.test.ts",
+        "--dry-run",
+      ]),
+    ).toMatchObject({
+      command: "generate-tests",
+      options: {
+        suites: ["regression"],
+        out: "tests/generated.test.ts",
+        dryRun: true,
+      },
+      files: [],
+    });
+  });
+
   it("rejects unknown commands", () => {
     expect(parseCliArgs(["nope"])).toEqual({
       message: 'Unknown command "nope". Run tool-call-contract --help for usage.',
@@ -133,6 +154,12 @@ describe("parseCliArgs", () => {
     });
     expect(parseCliArgs(["redact", "--suite", "regression", "--out", "safe.json"])).toEqual({
       message: "--out requires exactly one direct file.",
+    });
+  });
+
+  it("rejects generate-tests file arguments", () => {
+    expect(parseCliArgs(["generate-tests", "captures/raw.json"])).toEqual({
+      message: "generate-tests does not accept file arguments.",
     });
   });
 });
@@ -1267,6 +1294,216 @@ describe("runCliCommand", () => {
             },
           ],
         },
+      },
+    });
+  });
+
+  it("writes generated regression tests for configured suites", async () => {
+    const project = await createConfigProject({
+      captures: {
+        regression: ["captures/regression/*.json"],
+      },
+    });
+    await writeJson(path.join(project, "captures/regression/search.json"), {
+      name: "search_docs",
+      arguments: {
+        query: "generated",
+      },
+    });
+
+    await expect(
+      runCliCommand(["generate-tests", "--cwd", project, "--suite", "regression"]),
+    ).resolves.toMatchObject({
+      kind: "success",
+      exitCode: 0,
+      report: {
+        generatedTests: {
+          outFile: "test/tool-call-contract.generated.test.ts",
+          dryRun: false,
+          captureFiles: ["captures/regression/search.json"],
+          created: true,
+          updated: false,
+          unchanged: false,
+        },
+      },
+    });
+    await expect(
+      readFile(path.join(project, "test/tool-call-contract.generated.test.ts"), "utf8"),
+    ).resolves.toContain('label: "captures/regression/search.json"');
+  });
+
+  it("reports unchanged generated tests on a second run", async () => {
+    const project = await createConfigProject({
+      captures: {
+        regression: ["captures/regression/*.json"],
+      },
+    });
+    await writeJson(path.join(project, "captures/regression/search.json"), {
+      name: "search_docs",
+      arguments: {
+        query: "unchanged",
+      },
+    });
+
+    await runCliCommand(["generate-tests", "--cwd", project, "--suite", "regression"]);
+
+    await expect(
+      runCliCommand(["generate-tests", "--cwd", project, "--suite", "regression"]),
+    ).resolves.toMatchObject({
+      kind: "success",
+      exitCode: 0,
+      report: {
+        generatedTests: {
+          created: false,
+          updated: false,
+          unchanged: true,
+        },
+      },
+    });
+  });
+
+  it("writes generated tests to a custom output path", async () => {
+    const project = await createConfigProject({
+      captures: {
+        regression: ["captures/regression/*.json"],
+      },
+    });
+    await writeJson(path.join(project, "captures/regression/search.json"), {
+      name: "search_docs",
+      arguments: {
+        query: "custom",
+      },
+    });
+
+    await expect(
+      runCliCommand([
+        "generate-tests",
+        "--cwd",
+        project,
+        "--suite",
+        "regression",
+        "--out",
+        "tests/contracts/generated.test.ts",
+      ]),
+    ).resolves.toMatchObject({
+      kind: "success",
+      exitCode: 0,
+      report: {
+        generatedTests: {
+          outFile: "tests/contracts/generated.test.ts",
+          created: true,
+        },
+      },
+    });
+    await expect(
+      readFile(path.join(project, "tests/contracts/generated.test.ts"), "utf8"),
+    ).resolves.toContain('url: new URL("../../captures/regression/search.json", import.meta.url)');
+  });
+
+  it("previews generated tests with dry run", async () => {
+    const project = await createConfigProject({
+      captures: {
+        regression: ["captures/regression/*.json"],
+      },
+    });
+    await writeJson(path.join(project, "captures/regression/search.json"), {
+      name: "search_docs",
+      arguments: {
+        query: "dry run",
+      },
+    });
+
+    await expect(
+      runCliCommand(["generate-tests", "--cwd", project, "--suite", "regression", "--dry-run"]),
+    ).resolves.toMatchObject({
+      kind: "success",
+      exitCode: 0,
+      report: {
+        generatedTests: {
+          dryRun: true,
+          created: true,
+          updated: false,
+          unchanged: false,
+        },
+      },
+    });
+    await expect(
+      fileExists(path.join(project, "test/tool-call-contract.generated.test.ts")),
+    ).resolves.toBe(false);
+  });
+
+  it("uses all configured suites when generating tests without --suite", async () => {
+    const project = await createConfigProject({
+      captures: {
+        smoke: ["captures/smoke/*.json"],
+        regression: ["captures/regression/*.json"],
+      },
+    });
+    await writeJson(path.join(project, "captures/smoke/search.json"), {
+      name: "search_docs",
+      arguments: {
+        query: "smoke",
+      },
+    });
+    await writeJson(path.join(project, "captures/regression/search.json"), {
+      name: "search_docs",
+      arguments: {
+        query: "regression",
+      },
+    });
+
+    await expect(runCliCommand(["generate-tests", "--cwd", project])).resolves.toMatchObject({
+      kind: "success",
+      exitCode: 0,
+      report: {
+        generatedTests: {
+          captureFiles: ["captures/smoke/search.json", "captures/regression/search.json"],
+        },
+      },
+    });
+  });
+
+  it("reports missing capture config for generated tests", async () => {
+    const project = await createConfigProject();
+
+    await expect(runCliCommand(["generate-tests", "--cwd", project])).resolves.toMatchObject({
+      kind: "success",
+      exitCode: 1,
+      report: {
+        findings: [
+          {
+            id: "generated-test.no-captures",
+            severity: "error",
+          },
+        ],
+        generatedTests: {
+          outFile: "test/tool-call-contract.generated.test.ts",
+          captureFiles: [],
+          unchanged: true,
+        },
+      },
+    });
+  });
+
+  it("reports unknown suites for generated tests", async () => {
+    const project = await createConfigProject({
+      captures: {
+        smoke: ["captures/smoke/*.json"],
+      },
+    });
+
+    await expect(
+      runCliCommand(["generate-tests", "--cwd", project, "--suite", "regression"]),
+    ).resolves.toMatchObject({
+      kind: "success",
+      exitCode: 1,
+      report: {
+        findings: [
+          {
+            id: "capture.suite-unknown",
+            severity: "error",
+          },
+        ],
       },
     });
   });

@@ -22,6 +22,7 @@ import { ConfigLoadError, loadConfig } from "../config.js";
 import { createContractRegistry } from "../registry.js";
 import type { Finding } from "../reporting.js";
 import { analyzeRegistrySchemas } from "../schema.js";
+import { generateTests } from "./generate-tests.js";
 import { redactCaptureFiles } from "./redact.js";
 import { validateCaptureFiles } from "./validate.js";
 
@@ -37,6 +38,7 @@ Commands:
   generate              Generate fixtures, schemas, docs, and manifest
   validate <files...>   Validate captured tool-call JSON files
   redact <files...>     Redact captured tool-call JSON files
+  generate-tests        Generate Vitest regression tests for captures
 
 Options:
   -h, --help            Show help
@@ -288,6 +290,13 @@ export function parseCliArgs(args: readonly string[]): ParsedCliCommand | { mess
     }
   }
 
+  if (commandToken === "generate-tests") {
+    const usage = validateGenerateTestsUsage(files);
+    if (usage) {
+      return usage;
+    }
+  }
+
   return {
     command: commandToken,
     options,
@@ -395,6 +404,27 @@ async function createCommandReportForParsedInput(parsed: ParsedCliCommand): Prom
         command: parsed.command,
         findings,
         redaction: redaction.redaction,
+      });
+    }
+
+    if (parsed.command === "generate-tests") {
+      const generatedTests = await generateTests({
+        cwd: loaded.cwd,
+        configPath: loaded.configPath,
+        captures: loaded.config.captures,
+        suites: parsed.options.suites,
+        out: parsed.options.out,
+        dryRun: parsed.options.dryRun,
+      });
+      const findings = applyFindingPolicy(
+        [...registryFindings, ...generatedTests.findings],
+        parsed.options,
+      );
+
+      return createCommandReport({
+        command: parsed.command,
+        findings,
+        generatedTests: generatedTests.generatedTests,
       });
     }
 
@@ -521,7 +551,13 @@ function readOptionValue(
 }
 
 function isCommandName(value: unknown): value is CommandName {
-  return value === "check" || value === "generate" || value === "validate" || value === "redact";
+  return (
+    value === "check" ||
+    value === "generate" ||
+    value === "validate" ||
+    value === "redact" ||
+    value === "generate-tests"
+  );
 }
 
 function validateRedactUsage(
@@ -549,6 +585,16 @@ function validateRedactUsage(
   if (options.out && (files.length !== 1 || options.suites.length > 0)) {
     return {
       message: "--out requires exactly one direct file.",
+    };
+  }
+
+  return undefined;
+}
+
+function validateGenerateTestsUsage(files: readonly string[]): { message: string } | undefined {
+  if (files.length > 0) {
+    return {
+      message: "generate-tests does not accept file arguments.",
     };
   }
 

@@ -26,6 +26,7 @@ export {
   type CommandName,
   type CommandReport,
   type Finding,
+  type GeneratedTestReportMetadata,
   type ReportSummary,
   type RedactionReportMetadata,
   type Severity,
