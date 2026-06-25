@@ -69,6 +69,7 @@
     "zod": "^4.0.0"
   },
   "dependencies": {
-    "jiti": "^2.7.0"
+    "jiti": "^2.7.0",
+    "tinyglobby": "^0.2.17"
   }
 }

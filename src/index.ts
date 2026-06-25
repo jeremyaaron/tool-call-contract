@@ -1,7 +1,9 @@
 export {
   defineConfig,
   defineToolContract,
+  type CaptureSuiteConfig,
   type DefineToolContractInput,
+  type RedactionConfig,
   type ToolCallContractConfig,
   type ToolContract,
   type ZodSchema,

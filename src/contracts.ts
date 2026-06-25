@@ -23,6 +23,15 @@ export interface ToolCallContractConfig {
   examples?: Record<string, readonly unknown[]>;
   include?: readonly string[];
   exclude?: readonly string[];
+  captures?: CaptureSuiteConfig;
+  redaction?: RedactionConfig;
+}
+
+export type CaptureSuiteConfig = Record<string, readonly string[]>;
+
+export interface RedactionConfig {
+  paths: readonly string[];
+  replacement?: string;
 }
 
 export function defineToolContract<TSchema extends ZodSchema>(

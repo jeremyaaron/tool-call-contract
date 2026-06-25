@@ -4,7 +4,12 @@ import { pathToFileURL } from "node:url";
 
 import { createJiti } from "jiti";
 
-import type { ToolCallContractConfig, ToolContract } from "./contracts.js";
+import type {
+  CaptureSuiteConfig,
+  RedactionConfig,
+  ToolCallContractConfig,
+  ToolContract,
+} from "./contracts.js";
 
 export const defaultConfigFiles = [
   "tool-call-contract.config.ts",
@@ -116,6 +121,8 @@ function normalizeConfig(value: unknown): ToolCallContractConfig {
   const examples = normalizeExamples(value.examples);
   const include = optionalStringArray(value.include, "include");
   const exclude = optionalStringArray(value.exclude, "exclude");
+  const captures = normalizeCaptures(value.captures);
+  const redaction = normalizeRedaction(value.redaction);
 
   return {
     contracts,
@@ -123,6 +130,8 @@ function normalizeConfig(value: unknown): ToolCallContractConfig {
     ...(examples ? { examples } : {}),
     ...(include ? { include } : {}),
     ...(exclude ? { exclude } : {}),
+    ...(captures ? { captures } : {}),
+    ...(redaction ? { redaction } : {}),
   };
 }
 
@@ -182,6 +191,58 @@ function normalizeExamples(value: unknown): Record<string, readonly unknown[]> |
   return examples;
 }
 
+function normalizeCaptures(value: unknown): CaptureSuiteConfig | undefined {
+  if (value === undefined) {
+    return undefined;
+  }
+
+  if (!isRecord(value)) {
+    throw new ConfigLoadError("config.invalid", 'Config field "captures" must be an object.');
+  }
+
+  const captures: CaptureSuiteConfig = {};
+
+  for (const [name, patterns] of Object.entries(value)) {
+    if (name.trim().length === 0) {
+      throw new ConfigLoadError(
+        "config.invalid",
+        "Config capture suite names must be non-empty strings.",
+      );
+    }
+
+    captures[name] = normalizeNonEmptyStringArray(
+      patterns,
+      `Config captures for "${name}" must be an array of strings.`,
+      `Config captures for "${name}" must not contain empty patterns.`,
+    );
+  }
+
+  return captures;
+}
+
+function normalizeRedaction(value: unknown): RedactionConfig | undefined {
+  if (value === undefined) {
+    return undefined;
+  }
+
+  if (!isRecord(value)) {
+    throw new ConfigLoadError("config.invalid", 'Config field "redaction" must be an object.');
+  }
+
+  const paths = normalizeNonEmptyStringArray(
+    value.paths,
+    'Config field "redaction.paths" must be an array of strings.',
+    'Config field "redaction.paths" must not contain empty paths.',
+  );
+
+  const replacement = optionalString(value.replacement, "redaction.replacement");
+
+  return {
+    paths,
+    ...(replacement ? { replacement } : {}),
+  };
+}
+
 function optionalString(value: unknown, field: string): string | undefined {
   if (value === undefined) {
     return undefined;
@@ -199,14 +260,29 @@ function optionalStringArray(value: unknown, field: string): readonly string[] |
     return undefined;
   }
 
+  return normalizeStringArray(value, `Config field "${field}" must be an array of strings.`);
+}
+
+function normalizeStringArray(value: unknown, message: string): readonly string[] {
   if (!Array.isArray(value) || value.some((entry) => typeof entry !== "string")) {
-    throw new ConfigLoadError(
-      "config.invalid",
-      `Config field "${field}" must be an array of strings.`,
-    );
+    throw new ConfigLoadError("config.invalid", message);
   }
 
   return value;
+}
+
+function normalizeNonEmptyStringArray(
+  value: unknown,
+  typeMessage: string,
+  emptyMessage: string,
+): readonly string[] {
+  const entries = normalizeStringArray(value, typeMessage);
+
+  if (entries.some((entry) => entry.trim().length === 0)) {
+    throw new ConfigLoadError("config.invalid", emptyMessage);
+  }
+
+  return entries;
 }
 
 function resolveOutDir(cwd: string, outDir: string): string {
