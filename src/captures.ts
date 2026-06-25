@@ -55,12 +55,10 @@ export async function resolveCaptureFiles(
   }
 
   return {
-    files: [...filesByPath.values()]
-      .sort((left, right) => left.path.localeCompare(right.path))
-      .map((file) => ({
-        path: file.path,
-        suiteNames: file.suiteNames,
-      })),
+    files: [...filesByPath.values()].map((file) => ({
+      path: file.path,
+      suiteNames: file.suiteNames,
+    })),
     findings,
   };
 }

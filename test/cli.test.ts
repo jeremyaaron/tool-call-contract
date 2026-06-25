@@ -1,4 +1,4 @@
-import { access, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { access, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
@@ -56,10 +56,22 @@ describe("parseCliArgs", () => {
   });
 
   it("parses validate files and options", () => {
-    expect(parseCliArgs(["validate", "--allow-unknown", "one.json", "two.json"])).toMatchObject({
+    expect(
+      parseCliArgs([
+        "validate",
+        "--allow-unknown",
+        "--suite",
+        "smoke",
+        "--suite",
+        "regression",
+        "one.json",
+        "two.json",
+      ]),
+    ).toMatchObject({
       command: "validate",
       options: {
         allowUnknown: true,
+        suites: ["smoke", "regression"],
       },
       files: ["one.json", "two.json"],
     });
@@ -79,7 +91,7 @@ describe("parseCliArgs", () => {
 
   it("rejects validate without files", () => {
     expect(parseCliArgs(["validate"])).toEqual({
-      message: "validate requires at least one file.",
+      message: "validate requires at least one file or --suite.",
     });
   });
 });
@@ -574,7 +586,7 @@ describe("runCliCommand", () => {
       },
     ]);
 
-    const result = await runCliCommand(["validate", "--cwd", project, "one.json", "two.json"]);
+    const result = await runCliCommand(["validate", "--cwd", project, "two.json", "one.json"]);
 
     expect(result).toMatchObject({
       kind: "success",
@@ -587,11 +599,11 @@ describe("runCliCommand", () => {
         results: [
           {
             ok: true,
-            file: "one.json",
+            file: "two.json",
           },
           {
             ok: true,
-            file: "two.json",
+            file: "one.json",
           },
         ],
       },
@@ -755,6 +767,157 @@ describe("runCliCommand", () => {
       },
     });
   });
+
+  it("validates captures from a configured suite", async () => {
+    const project = await createConfigProject({
+      captures: {
+        smoke: ["captures/smoke/*.json"],
+      },
+    });
+    await writeJson(path.join(project, "captures/smoke/search.json"), {
+      name: "search_docs",
+      arguments: {
+        query: "suite",
+      },
+    });
+
+    await expect(
+      runCliCommand(["validate", "--cwd", project, "--suite", "smoke"]),
+    ).resolves.toMatchObject({
+      kind: "success",
+      exitCode: 0,
+      report: {
+        summary: {
+          validResults: 1,
+          invalidResults: 0,
+        },
+        results: [
+          {
+            ok: true,
+            file: "captures/smoke/search.json",
+          },
+        ],
+      },
+    });
+  });
+
+  it("validates repeated suites once per resolved file", async () => {
+    const project = await createConfigProject({
+      captures: {
+        all: ["captures/**/*.json"],
+        regression: ["captures/regression/*.json"],
+      },
+    });
+    await writeJson(path.join(project, "captures/regression/search.json"), {
+      name: "search_docs",
+      arguments: {
+        query: "dedupe",
+      },
+    });
+
+    await expect(
+      runCliCommand([
+        "validate",
+        "--cwd",
+        project,
+        "--suite",
+        "all",
+        "--suite",
+        "regression",
+        "--suite",
+        "all",
+        "captures/regression/search.json",
+      ]),
+    ).resolves.toMatchObject({
+      kind: "success",
+      exitCode: 0,
+      report: {
+        summary: {
+          validResults: 1,
+          invalidResults: 0,
+        },
+      },
+    });
+  });
+
+  it("validates configured suites and direct files together", async () => {
+    const project = await createConfigProject({
+      captures: {
+        smoke: ["captures/smoke/*.json"],
+      },
+    });
+    await writeJson(path.join(project, "captures/smoke/search.json"), {
+      name: "search_docs",
+      arguments: {
+        query: "suite",
+      },
+    });
+    await writeJson(path.join(project, "manual.json"), {
+      name: "search_docs",
+      arguments: {
+        query: "manual",
+      },
+    });
+
+    await expect(
+      runCliCommand(["validate", "--cwd", project, "--suite", "smoke", "manual.json"]),
+    ).resolves.toMatchObject({
+      kind: "success",
+      exitCode: 0,
+      report: {
+        summary: {
+          validResults: 2,
+          invalidResults: 0,
+        },
+      },
+    });
+  });
+
+  it("reports unknown capture suites during validation", async () => {
+    const project = await createConfigProject({
+      captures: {
+        smoke: ["captures/smoke/*.json"],
+      },
+    });
+
+    await expect(
+      runCliCommand(["validate", "--cwd", project, "--suite", "regression"]),
+    ).resolves.toMatchObject({
+      kind: "success",
+      exitCode: 1,
+      report: {
+        findings: [
+          {
+            id: "capture.suite-unknown",
+            severity: "error",
+          },
+        ],
+      },
+    });
+  });
+
+  it("reports empty capture suites during validation", async () => {
+    const project = await createConfigProject({
+      captures: {
+        regression: ["captures/regression/*.json"],
+      },
+    });
+
+    await expect(
+      runCliCommand(["validate", "--cwd", project, "--suite", "regression"]),
+    ).resolves.toMatchObject({
+      kind: "success",
+      exitCode: 1,
+      report: {
+        findings: [
+          {
+            id: "capture.suite-empty",
+            severity: "error",
+          },
+        ],
+      },
+    });
+  });
 });
 
 describe("runCli", () => {
@@ -799,7 +962,7 @@ describe("runCli", () => {
 
     expect(exitCode).toBe(2);
     expect(output.stdout).toBe("");
-    expect(output.stderr).toBe("validate requires at least one file.\n");
+    expect(output.stderr).toBe("validate requires at least one file or --suite.\n");
   });
 
   it("prints deterministic JSON validation output", async () => {
@@ -861,6 +1024,7 @@ interface ConfigProjectOptions {
   rootStringSchema?: boolean;
   description?: string;
   extraContract?: boolean;
+  captures?: Record<string, readonly string[]>;
 }
 
 async function createConfigProject(options: ConfigProjectOptions = {}): Promise<string> {
@@ -880,6 +1044,10 @@ async function writeProjectConfig(
     ? ""
     : (options.description ?? "Search documentation.");
   const schema = options.rootStringSchema ? "z.string()" : "z.object({ query: z.string() })";
+  const captures = options.captures
+    ? `,
+  captures: ${JSON.stringify(options.captures, null, 2)}`
+    : "";
 
   await writeFile(
     path.join(project, "tool-call-contract.config.ts"),
@@ -903,7 +1071,7 @@ const createIssue = defineToolContract({
 });
 
 export default defineConfig({
-  contracts: [configuredSearchDocs${options.extraContract ? ", createIssue" : ""}],
+  contracts: [configuredSearchDocs${options.extraContract ? ", createIssue" : ""}]${captures},
 });
 `,
   );
@@ -919,5 +1087,6 @@ async function fileExists(file: string): Promise<boolean> {
 }
 
 async function writeJson(file: string, value: unknown): Promise<void> {
+  await mkdir(path.dirname(file), { recursive: true });
   await writeFile(file, `${JSON.stringify(value, null, 2)}\n`);
 }

@@ -15,6 +15,7 @@ import {
   planArtifactWrites,
   writeArtifactPlan,
 } from "../artifact-writer.js";
+import { resolveCaptureFiles } from "../captures.js";
 import { runContractChecks } from "../checks.js";
 import { ConfigLoadError, loadConfig } from "../config.js";
 import { createContractRegistry } from "../registry.js";
@@ -40,6 +41,7 @@ Options:
       --cwd <path>      Run from a different working directory
       --config <path>   Load a specific config file
       --json            Print JSON output
+      --suite <name>    Include a configured capture suite
 `;
 
 export interface CliIo {
@@ -57,6 +59,7 @@ export interface CliOptions {
   clean: boolean;
   outDir?: string;
   allowUnknown: boolean;
+  suites: string[];
 }
 
 export interface ParsedCliCommand {
@@ -90,6 +93,7 @@ const defaultOptions: CliOptions = {
   dryRun: false,
   clean: false,
   allowUnknown: false,
+  suites: [],
 };
 
 export async function runCli(args: readonly string[], io: CliIo = consoleIo): Promise<number> {
@@ -162,7 +166,7 @@ export function parseCliArgs(args: readonly string[]): ParsedCliCommand | { mess
     };
   }
 
-  const options: CliOptions = { ...defaultOptions, ignore: [] };
+  const options: CliOptions = { ...defaultOptions, ignore: [], suites: [] };
   const files: string[] = [];
   let collectIgnore = false;
 
@@ -223,6 +227,15 @@ export function parseCliArgs(args: readonly string[]): ParsedCliCommand | { mess
       case "--allow-unknown":
         options.allowUnknown = true;
         break;
+      case "--suite": {
+        const value = readOptionValue(rest, index, arg);
+        if ("message" in value) {
+          return value;
+        }
+        options.suites.push(value.value);
+        index = value.index;
+        break;
+      }
       case "--ignore": {
         const value = readOptionValue(rest, index, arg);
         if ("message" in value) {
@@ -244,9 +257,9 @@ export function parseCliArgs(args: readonly string[]): ParsedCliCommand | { mess
     }
   }
 
-  if (commandToken === "validate" && files.length === 0) {
+  if (commandToken === "validate" && files.length === 0 && options.suites.length === 0) {
     return {
-      message: "validate requires at least one file.",
+      message: "validate requires at least one file or --suite.",
     };
   }
 
@@ -304,13 +317,19 @@ async function createCommandReportForParsedInput(parsed: ParsedCliCommand): Prom
     }
 
     if (parsed.command === "validate") {
+      const captures = await resolveCaptureFiles({
+        cwd: loaded.cwd,
+        captures: loaded.config.captures,
+        suites: parsed.options.suites,
+        files: parsed.files,
+      });
       const validation = await validateCaptureFiles(registry, {
         cwd: loaded.cwd,
-        files: parsed.files,
+        files: captures.files.map((file) => file.path),
         allowUnknown: parsed.options.allowUnknown,
       });
       const findings = applyFindingPolicy(
-        [...registryFindings, ...validation.findings],
+        [...registryFindings, ...captures.findings, ...validation.findings],
         parsed.options,
       );
 
