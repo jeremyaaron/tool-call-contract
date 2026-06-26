@@ -1,5 +1,6 @@
 import {
   createCommandReport,
+  createValidationReportMetadata,
   hasBlockingFailures,
   renderHumanReport,
   renderJsonReport,
@@ -15,11 +16,14 @@ import {
   planArtifactWrites,
   writeArtifactPlan,
 } from "../artifact-writer.js";
+import { resolveCaptureFiles } from "../captures.js";
 import { runContractChecks } from "../checks.js";
 import { ConfigLoadError, loadConfig } from "../config.js";
 import { createContractRegistry } from "../registry.js";
 import type { Finding } from "../reporting.js";
 import { analyzeRegistrySchemas } from "../schema.js";
+import { generateTests } from "./generate-tests.js";
+import { redactCaptureFiles } from "./redact.js";
 import { validateCaptureFiles } from "./validate.js";
 
 export const cliHelpText = `tool-call-contract
@@ -33,6 +37,8 @@ Commands:
   check                 Validate configured tool contracts
   generate              Generate fixtures, schemas, docs, and manifest
   validate <files...>   Validate captured tool-call JSON files
+  redact <files...>     Redact captured tool-call JSON files
+  generate-tests        Generate Vitest regression tests for captures
 
 Options:
   -h, --help            Show help
@@ -40,6 +46,7 @@ Options:
       --cwd <path>      Run from a different working directory
       --config <path>   Load a specific config file
       --json            Print JSON output
+      --suite <name>    Include a configured capture suite
 `;
 
 export interface CliIo {
@@ -55,8 +62,11 @@ export interface CliOptions {
   ignore: string[];
   dryRun: boolean;
   clean: boolean;
+  check: boolean;
+  out?: string;
   outDir?: string;
   allowUnknown: boolean;
+  suites: string[];
 }
 
 export interface ParsedCliCommand {
@@ -89,7 +99,9 @@ const defaultOptions: CliOptions = {
   ignore: [],
   dryRun: false,
   clean: false,
+  check: false,
   allowUnknown: false,
+  suites: [],
 };
 
 export async function runCli(args: readonly string[], io: CliIo = consoleIo): Promise<number> {
@@ -120,7 +132,7 @@ export async function runCliCommand(args: readonly string[]): Promise<CliRunResu
     return {
       kind: "output",
       exitCode: 0,
-      text: "0.1.1\n",
+      text: "0.2.0\n",
     };
   }
 
@@ -162,7 +174,7 @@ export function parseCliArgs(args: readonly string[]): ParsedCliCommand | { mess
     };
   }
 
-  const options: CliOptions = { ...defaultOptions, ignore: [] };
+  const options: CliOptions = { ...defaultOptions, ignore: [], suites: [] };
   const files: string[] = [];
   let collectIgnore = false;
 
@@ -208,6 +220,15 @@ export function parseCliArgs(args: readonly string[]): ParsedCliCommand | { mess
         index = value.index;
         break;
       }
+      case "--out": {
+        const value = readOptionValue(rest, index, arg);
+        if ("message" in value) {
+          return value;
+        }
+        options.out = value.value;
+        index = value.index;
+        break;
+      }
       case "--json":
         options.json = true;
         break;
@@ -220,9 +241,21 @@ export function parseCliArgs(args: readonly string[]): ParsedCliCommand | { mess
       case "--clean":
         options.clean = true;
         break;
+      case "--check":
+        options.check = true;
+        break;
       case "--allow-unknown":
         options.allowUnknown = true;
         break;
+      case "--suite": {
+        const value = readOptionValue(rest, index, arg);
+        if ("message" in value) {
+          return value;
+        }
+        options.suites.push(value.value);
+        index = value.index;
+        break;
+      }
       case "--ignore": {
         const value = readOptionValue(rest, index, arg);
         if ("message" in value) {
@@ -244,10 +277,24 @@ export function parseCliArgs(args: readonly string[]): ParsedCliCommand | { mess
     }
   }
 
-  if (commandToken === "validate" && files.length === 0) {
+  if (commandToken === "validate" && files.length === 0 && options.suites.length === 0) {
     return {
-      message: "validate requires at least one file.",
+      message: "validate requires at least one file or --suite.",
     };
+  }
+
+  if (commandToken === "redact") {
+    const usage = validateRedactUsage(files, options);
+    if (usage) {
+      return usage;
+    }
+  }
+
+  if (commandToken === "generate-tests") {
+    const usage = validateGenerateTestsUsage(files);
+    if (usage) {
+      return usage;
+    }
   }
 
   return {
@@ -304,13 +351,19 @@ async function createCommandReportForParsedInput(parsed: ParsedCliCommand): Prom
     }
 
     if (parsed.command === "validate") {
+      const captures = await resolveCaptureFiles({
+        cwd: loaded.cwd,
+        captures: loaded.config.captures,
+        suites: parsed.options.suites,
+        files: parsed.files,
+      });
       const validation = await validateCaptureFiles(registry, {
         cwd: loaded.cwd,
-        files: parsed.files,
+        files: captures.files.map((file) => file.path),
         allowUnknown: parsed.options.allowUnknown,
       });
       const findings = applyFindingPolicy(
-        [...registryFindings, ...validation.findings],
+        [...registryFindings, ...captures.findings, ...validation.findings],
         parsed.options,
       );
 
@@ -318,6 +371,60 @@ async function createCommandReportForParsedInput(parsed: ParsedCliCommand): Prom
         command: parsed.command,
         findings,
         results: validation.results,
+        validation: createValidationReportMetadata({
+          suites: parsed.options.suites,
+          files: captures.files,
+          results: validation.results,
+        }),
+      });
+    }
+
+    if (parsed.command === "redact") {
+      const captures = await resolveCaptureFiles({
+        cwd: loaded.cwd,
+        captures: loaded.config.captures,
+        suites: parsed.options.suites,
+        files: parsed.files,
+      });
+      const redaction = await redactCaptureFiles({
+        cwd: loaded.cwd,
+        files: captures.files,
+        redaction: loaded.config.redaction,
+        check: parsed.options.check,
+        dryRun: parsed.options.dryRun,
+        out: parsed.options.out,
+        outDir: parsed.options.outDir,
+      });
+      const findings = applyFindingPolicy(
+        [...captures.findings, ...redaction.findings],
+        parsed.options,
+      );
+
+      return createCommandReport({
+        command: parsed.command,
+        findings,
+        redaction: redaction.redaction,
+      });
+    }
+
+    if (parsed.command === "generate-tests") {
+      const generatedTests = await generateTests({
+        cwd: loaded.cwd,
+        configPath: loaded.configPath,
+        captures: loaded.config.captures,
+        suites: parsed.options.suites,
+        out: parsed.options.out,
+        dryRun: parsed.options.dryRun,
+      });
+      const findings = applyFindingPolicy(
+        [...registryFindings, ...generatedTests.findings],
+        parsed.options,
+      );
+
+      return createCommandReport({
+        command: parsed.command,
+        findings,
+        generatedTests: generatedTests.generatedTests,
       });
     }
 
@@ -444,7 +551,54 @@ function readOptionValue(
 }
 
 function isCommandName(value: unknown): value is CommandName {
-  return value === "check" || value === "generate" || value === "validate";
+  return (
+    value === "check" ||
+    value === "generate" ||
+    value === "validate" ||
+    value === "redact" ||
+    value === "generate-tests"
+  );
+}
+
+function validateRedactUsage(
+  files: readonly string[],
+  options: CliOptions,
+): { message: string } | undefined {
+  if (files.length === 0 && options.suites.length === 0) {
+    return {
+      message: "redact requires at least one file or --suite.",
+    };
+  }
+
+  if (options.out && options.outDir) {
+    return {
+      message: "--out and --out-dir cannot be used together.",
+    };
+  }
+
+  if (options.check && (options.out || options.outDir)) {
+    return {
+      message: "--check cannot be used with --out or --out-dir.",
+    };
+  }
+
+  if (options.out && (files.length !== 1 || options.suites.length > 0)) {
+    return {
+      message: "--out requires exactly one direct file.",
+    };
+  }
+
+  return undefined;
+}
+
+function validateGenerateTestsUsage(files: readonly string[]): { message: string } | undefined {
+  if (files.length > 0) {
+    return {
+      message: "generate-tests does not accept file arguments.",
+    };
+  }
+
+  return undefined;
 }
 
 const consoleIo: CliIo = {

@@ -1,4 +1,4 @@
-import { access, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { access, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
@@ -10,7 +10,7 @@ import { parseCliArgs, runCli, runCliCommand } from "../src/cli/app.js";
 
 describe("package scaffold", () => {
   it("exports the package version", () => {
-    expect(version).toBe("0.1.1");
+    expect(version).toBe("0.2.0");
   });
 });
 
@@ -56,12 +56,66 @@ describe("parseCliArgs", () => {
   });
 
   it("parses validate files and options", () => {
-    expect(parseCliArgs(["validate", "--allow-unknown", "one.json", "two.json"])).toMatchObject({
+    expect(
+      parseCliArgs([
+        "validate",
+        "--allow-unknown",
+        "--suite",
+        "smoke",
+        "--suite",
+        "regression",
+        "one.json",
+        "two.json",
+      ]),
+    ).toMatchObject({
       command: "validate",
       options: {
         allowUnknown: true,
+        suites: ["smoke", "regression"],
       },
       files: ["one.json", "two.json"],
+    });
+  });
+
+  it("parses redact files and options", () => {
+    expect(
+      parseCliArgs([
+        "redact",
+        "--check",
+        "--dry-run",
+        "--suite",
+        "regression",
+        "captures/raw.json",
+      ]),
+    ).toMatchObject({
+      command: "redact",
+      options: {
+        check: true,
+        dryRun: true,
+        suites: ["regression"],
+      },
+      files: ["captures/raw.json"],
+    });
+  });
+
+  it("parses generate-tests options", () => {
+    expect(
+      parseCliArgs([
+        "generate-tests",
+        "--suite",
+        "regression",
+        "--out",
+        "tests/generated.test.ts",
+        "--dry-run",
+      ]),
+    ).toMatchObject({
+      command: "generate-tests",
+      options: {
+        suites: ["regression"],
+        out: "tests/generated.test.ts",
+        dryRun: true,
+      },
+      files: [],
     });
   });
 
@@ -79,7 +133,33 @@ describe("parseCliArgs", () => {
 
   it("rejects validate without files", () => {
     expect(parseCliArgs(["validate"])).toEqual({
-      message: "validate requires at least one file.",
+      message: "validate requires at least one file or --suite.",
+    });
+  });
+
+  it("rejects redact without files or suites", () => {
+    expect(parseCliArgs(["redact"])).toEqual({
+      message: "redact requires at least one file or --suite.",
+    });
+  });
+
+  it("rejects invalid redact output options", () => {
+    expect(parseCliArgs(["redact", "raw.json", "--out", "safe.json", "--out-dir", "safe"])).toEqual(
+      {
+        message: "--out and --out-dir cannot be used together.",
+      },
+    );
+    expect(parseCliArgs(["redact", "raw.json", "--check", "--out", "safe.json"])).toEqual({
+      message: "--check cannot be used with --out or --out-dir.",
+    });
+    expect(parseCliArgs(["redact", "--suite", "regression", "--out", "safe.json"])).toEqual({
+      message: "--out requires exactly one direct file.",
+    });
+  });
+
+  it("rejects generate-tests file arguments", () => {
+    expect(parseCliArgs(["generate-tests", "captures/raw.json"])).toEqual({
+      message: "generate-tests does not accept file arguments.",
     });
   });
 });
@@ -101,7 +181,7 @@ describe("runCliCommand", () => {
     await expect(runCliCommand(["--version"])).resolves.toEqual({
       kind: "output",
       exitCode: 0,
-      text: "0.1.1\n",
+      text: "0.2.0\n",
     });
   });
 
@@ -432,7 +512,7 @@ describe("runCliCommand", () => {
           schemaVersion: 1,
           generator: {
             name: "tool-call-contract",
-            version: "0.1.1",
+            version: "0.2.0",
           },
           generatedAt: null,
           contracts: [],
@@ -574,7 +654,7 @@ describe("runCliCommand", () => {
       },
     ]);
 
-    const result = await runCliCommand(["validate", "--cwd", project, "one.json", "two.json"]);
+    const result = await runCliCommand(["validate", "--cwd", project, "two.json", "one.json"]);
 
     expect(result).toMatchObject({
       kind: "success",
@@ -587,11 +667,11 @@ describe("runCliCommand", () => {
         results: [
           {
             ok: true,
-            file: "one.json",
+            file: "two.json",
           },
           {
             ok: true,
-            file: "two.json",
+            file: "one.json",
           },
         ],
       },
@@ -755,6 +835,678 @@ describe("runCliCommand", () => {
       },
     });
   });
+
+  it("validates captures from a configured suite", async () => {
+    const project = await createConfigProject({
+      captures: {
+        smoke: ["captures/smoke/*.json"],
+      },
+    });
+    await writeJson(path.join(project, "captures/smoke/search.json"), {
+      name: "search_docs",
+      arguments: {
+        query: "suite",
+      },
+    });
+
+    await expect(
+      runCliCommand(["validate", "--cwd", project, "--suite", "smoke"]),
+    ).resolves.toMatchObject({
+      kind: "success",
+      exitCode: 0,
+      report: {
+        summary: {
+          validResults: 1,
+          invalidResults: 0,
+        },
+        validation: {
+          suites: [
+            {
+              name: "smoke",
+              files: ["captures/smoke/search.json"],
+              validResults: 1,
+              invalidResults: 0,
+            },
+          ],
+          files: [
+            {
+              path: "captures/smoke/search.json",
+              suiteNames: ["smoke"],
+              validResults: 1,
+              invalidResults: 0,
+            },
+          ],
+          contracts: [
+            {
+              name: "search_docs",
+              validResults: 1,
+              invalidResults: 0,
+              unknownResults: 0,
+            },
+          ],
+        },
+        results: [
+          {
+            ok: true,
+            file: "captures/smoke/search.json",
+          },
+        ],
+      },
+    });
+  });
+
+  it("validates repeated suites once per resolved file", async () => {
+    const project = await createConfigProject({
+      captures: {
+        all: ["captures/**/*.json"],
+        regression: ["captures/regression/*.json"],
+      },
+    });
+    await writeJson(path.join(project, "captures/regression/search.json"), {
+      name: "search_docs",
+      arguments: {
+        query: "dedupe",
+      },
+    });
+
+    await expect(
+      runCliCommand([
+        "validate",
+        "--cwd",
+        project,
+        "--suite",
+        "all",
+        "--suite",
+        "regression",
+        "--suite",
+        "all",
+        "captures/regression/search.json",
+      ]),
+    ).resolves.toMatchObject({
+      kind: "success",
+      exitCode: 0,
+      report: {
+        summary: {
+          validResults: 1,
+          invalidResults: 0,
+        },
+      },
+    });
+  });
+
+  it("validates configured suites and direct files together", async () => {
+    const project = await createConfigProject({
+      captures: {
+        smoke: ["captures/smoke/*.json"],
+      },
+    });
+    await writeJson(path.join(project, "captures/smoke/search.json"), {
+      name: "search_docs",
+      arguments: {
+        query: "suite",
+      },
+    });
+    await writeJson(path.join(project, "manual.json"), {
+      name: "search_docs",
+      arguments: {
+        query: "manual",
+      },
+    });
+
+    await expect(
+      runCliCommand(["validate", "--cwd", project, "--suite", "smoke", "manual.json"]),
+    ).resolves.toMatchObject({
+      kind: "success",
+      exitCode: 0,
+      report: {
+        summary: {
+          validResults: 2,
+          invalidResults: 0,
+        },
+      },
+    });
+  });
+
+  it("reports unknown capture suites during validation", async () => {
+    const project = await createConfigProject({
+      captures: {
+        smoke: ["captures/smoke/*.json"],
+      },
+    });
+
+    await expect(
+      runCliCommand(["validate", "--cwd", project, "--suite", "regression"]),
+    ).resolves.toMatchObject({
+      kind: "success",
+      exitCode: 1,
+      report: {
+        findings: [
+          {
+            id: "capture.suite-unknown",
+            severity: "error",
+          },
+        ],
+      },
+    });
+  });
+
+  it("reports empty capture suites during validation", async () => {
+    const project = await createConfigProject({
+      captures: {
+        regression: ["captures/regression/*.json"],
+      },
+    });
+
+    await expect(
+      runCliCommand(["validate", "--cwd", project, "--suite", "regression"]),
+    ).resolves.toMatchObject({
+      kind: "success",
+      exitCode: 1,
+      report: {
+        findings: [
+          {
+            id: "capture.suite-empty",
+            severity: "error",
+          },
+        ],
+      },
+    });
+  });
+
+  it("reports missing redaction config", async () => {
+    const project = await createConfigProject();
+    await writeJson(path.join(project, "raw.json"), {
+      arguments: {
+        email: "user@example.com",
+      },
+    });
+
+    await expect(runCliCommand(["redact", "--cwd", project, "raw.json"])).resolves.toMatchObject({
+      kind: "success",
+      exitCode: 1,
+      report: {
+        findings: [
+          {
+            id: "redaction.config-missing",
+            severity: "error",
+          },
+        ],
+        redaction: {
+          files: [
+            {
+              path: "raw.json",
+              changed: false,
+              replacements: 0,
+            },
+          ],
+        },
+      },
+    });
+  });
+
+  it("redacts capture files in place", async () => {
+    const project = await createConfigProject({
+      redaction: {
+        paths: ["arguments.email"],
+      },
+    });
+    await writeJson(path.join(project, "raw.json"), {
+      name: "create_issue",
+      arguments: {
+        email: "user@example.com",
+        title: "Bug",
+      },
+    });
+
+    await expect(runCliCommand(["redact", "--cwd", project, "raw.json"])).resolves.toMatchObject({
+      kind: "success",
+      exitCode: 0,
+      report: {
+        redaction: {
+          checked: false,
+          dryRun: false,
+          files: [
+            {
+              path: "raw.json",
+              destination: "raw.json",
+              changed: true,
+              replacements: 1,
+            },
+          ],
+        },
+      },
+    });
+    await expect(readFile(path.join(project, "raw.json"), "utf8")).resolves.toContain(
+      '"email": "[REDACTED]"',
+    );
+  });
+
+  it("checks already-redacted capture files without writing", async () => {
+    const project = await createConfigProject({
+      redaction: {
+        paths: ["arguments.email"],
+      },
+    });
+    const safeContent = ["{", '  "arguments": {', '    "email": "[REDACTED]"', "  }", "}", ""].join(
+      "\n",
+    );
+    await writeFile(path.join(project, "safe.json"), safeContent);
+
+    await expect(
+      runCliCommand(["redact", "--cwd", project, "--check", "safe.json"]),
+    ).resolves.toMatchObject({
+      kind: "success",
+      exitCode: 0,
+      report: {
+        redaction: {
+          checked: true,
+          files: [
+            {
+              path: "safe.json",
+              changed: false,
+              replacements: 0,
+            },
+          ],
+        },
+      },
+    });
+    await expect(readFile(path.join(project, "safe.json"), "utf8")).resolves.toBe(safeContent);
+  });
+
+  it("fails check mode when redaction would change files", async () => {
+    const project = await createConfigProject({
+      redaction: {
+        paths: ["arguments.email"],
+      },
+    });
+    await writeJson(path.join(project, "raw.json"), {
+      arguments: {
+        email: "user@example.com",
+      },
+    });
+
+    await expect(
+      runCliCommand(["redact", "--cwd", project, "--check", "raw.json"]),
+    ).resolves.toMatchObject({
+      kind: "success",
+      exitCode: 1,
+      report: {
+        findings: [
+          {
+            id: "redaction.would-change",
+            severity: "error",
+            file: "raw.json",
+          },
+        ],
+        redaction: {
+          checked: true,
+          files: [
+            {
+              path: "raw.json",
+              changed: true,
+              replacements: 1,
+            },
+          ],
+        },
+      },
+    });
+    await expect(readFile(path.join(project, "raw.json"), "utf8")).resolves.toContain(
+      "user@example.com",
+    );
+  });
+
+  it("previews redaction output with dry run", async () => {
+    const project = await createConfigProject({
+      redaction: {
+        paths: ["arguments.email"],
+      },
+    });
+    await writeJson(path.join(project, "raw.json"), {
+      arguments: {
+        email: "user@example.com",
+      },
+    });
+
+    await expect(
+      runCliCommand(["redact", "--cwd", project, "--dry-run", "--out-dir", "safe", "raw.json"]),
+    ).resolves.toMatchObject({
+      kind: "success",
+      exitCode: 0,
+      report: {
+        redaction: {
+          dryRun: true,
+          files: [
+            {
+              path: "raw.json",
+              destination: "safe/raw.json",
+              changed: true,
+              replacements: 1,
+            },
+          ],
+        },
+      },
+    });
+    await expect(fileExists(path.join(project, "safe/raw.json"))).resolves.toBe(false);
+  });
+
+  it("writes a single redacted output file with --out", async () => {
+    const project = await createConfigProject({
+      redaction: {
+        paths: ["arguments.email"],
+        replacement: "[SAFE]",
+      },
+    });
+    await writeJson(path.join(project, "raw.json"), {
+      arguments: {
+        email: "user@example.com",
+      },
+    });
+
+    await expect(
+      runCliCommand(["redact", "--cwd", project, "raw.json", "--out", "safe/raw.json"]),
+    ).resolves.toMatchObject({
+      kind: "success",
+      exitCode: 0,
+      report: {
+        redaction: {
+          files: [
+            {
+              path: "raw.json",
+              destination: "safe/raw.json",
+              changed: true,
+              replacements: 1,
+            },
+          ],
+        },
+      },
+    });
+    await expect(readFile(path.join(project, "safe/raw.json"), "utf8")).resolves.toContain(
+      '"email": "[SAFE]"',
+    );
+    await expect(readFile(path.join(project, "raw.json"), "utf8")).resolves.toContain(
+      "user@example.com",
+    );
+  });
+
+  it("redacts suite captures into an output directory", async () => {
+    const project = await createConfigProject({
+      captures: {
+        regression: ["captures/regression/*.json"],
+      },
+      redaction: {
+        paths: ["arguments.email"],
+      },
+    });
+    await writeJson(path.join(project, "captures/regression/raw.json"), {
+      arguments: {
+        email: "user@example.com",
+      },
+    });
+
+    await expect(
+      runCliCommand(["redact", "--cwd", project, "--suite", "regression", "--out-dir", "redacted"]),
+    ).resolves.toMatchObject({
+      kind: "success",
+      exitCode: 0,
+      report: {
+        redaction: {
+          files: [
+            {
+              path: "captures/regression/raw.json",
+              destination: "redacted/captures/regression/raw.json",
+              changed: true,
+              replacements: 1,
+            },
+          ],
+        },
+      },
+    });
+    await expect(
+      readFile(path.join(project, "redacted/captures/regression/raw.json"), "utf8"),
+    ).resolves.toContain('"email": "[REDACTED]"');
+  });
+
+  it("reports malformed JSON during redaction", async () => {
+    const project = await createConfigProject({
+      redaction: {
+        paths: ["arguments.email"],
+      },
+    });
+    await writeFile(path.join(project, "bad.json"), "{ nope");
+
+    await expect(runCliCommand(["redact", "--cwd", project, "bad.json"])).resolves.toMatchObject({
+      kind: "success",
+      exitCode: 1,
+      report: {
+        findings: [
+          {
+            id: "capture.file-invalid-json",
+            severity: "error",
+            file: "bad.json",
+          },
+        ],
+        redaction: {
+          files: [
+            {
+              path: "bad.json",
+              changed: false,
+              replacements: 0,
+            },
+          ],
+        },
+      },
+    });
+  });
+
+  it("writes generated regression tests for configured suites", async () => {
+    const project = await createConfigProject({
+      captures: {
+        regression: ["captures/regression/*.json"],
+      },
+    });
+    await writeJson(path.join(project, "captures/regression/search.json"), {
+      name: "search_docs",
+      arguments: {
+        query: "generated",
+      },
+    });
+
+    await expect(
+      runCliCommand(["generate-tests", "--cwd", project, "--suite", "regression"]),
+    ).resolves.toMatchObject({
+      kind: "success",
+      exitCode: 0,
+      report: {
+        generatedTests: {
+          outFile: "test/tool-call-contract.generated.test.ts",
+          dryRun: false,
+          captureFiles: ["captures/regression/search.json"],
+          created: true,
+          updated: false,
+          unchanged: false,
+        },
+      },
+    });
+    await expect(
+      readFile(path.join(project, "test/tool-call-contract.generated.test.ts"), "utf8"),
+    ).resolves.toContain('label: "captures/regression/search.json"');
+  });
+
+  it("reports unchanged generated tests on a second run", async () => {
+    const project = await createConfigProject({
+      captures: {
+        regression: ["captures/regression/*.json"],
+      },
+    });
+    await writeJson(path.join(project, "captures/regression/search.json"), {
+      name: "search_docs",
+      arguments: {
+        query: "unchanged",
+      },
+    });
+
+    await runCliCommand(["generate-tests", "--cwd", project, "--suite", "regression"]);
+
+    await expect(
+      runCliCommand(["generate-tests", "--cwd", project, "--suite", "regression"]),
+    ).resolves.toMatchObject({
+      kind: "success",
+      exitCode: 0,
+      report: {
+        generatedTests: {
+          created: false,
+          updated: false,
+          unchanged: true,
+        },
+      },
+    });
+  });
+
+  it("writes generated tests to a custom output path", async () => {
+    const project = await createConfigProject({
+      captures: {
+        regression: ["captures/regression/*.json"],
+      },
+    });
+    await writeJson(path.join(project, "captures/regression/search.json"), {
+      name: "search_docs",
+      arguments: {
+        query: "custom",
+      },
+    });
+
+    await expect(
+      runCliCommand([
+        "generate-tests",
+        "--cwd",
+        project,
+        "--suite",
+        "regression",
+        "--out",
+        "tests/contracts/generated.test.ts",
+      ]),
+    ).resolves.toMatchObject({
+      kind: "success",
+      exitCode: 0,
+      report: {
+        generatedTests: {
+          outFile: "tests/contracts/generated.test.ts",
+          created: true,
+        },
+      },
+    });
+    await expect(
+      readFile(path.join(project, "tests/contracts/generated.test.ts"), "utf8"),
+    ).resolves.toContain('url: new URL("../../captures/regression/search.json", import.meta.url)');
+  });
+
+  it("previews generated tests with dry run", async () => {
+    const project = await createConfigProject({
+      captures: {
+        regression: ["captures/regression/*.json"],
+      },
+    });
+    await writeJson(path.join(project, "captures/regression/search.json"), {
+      name: "search_docs",
+      arguments: {
+        query: "dry run",
+      },
+    });
+
+    await expect(
+      runCliCommand(["generate-tests", "--cwd", project, "--suite", "regression", "--dry-run"]),
+    ).resolves.toMatchObject({
+      kind: "success",
+      exitCode: 0,
+      report: {
+        generatedTests: {
+          dryRun: true,
+          created: true,
+          updated: false,
+          unchanged: false,
+        },
+      },
+    });
+    await expect(
+      fileExists(path.join(project, "test/tool-call-contract.generated.test.ts")),
+    ).resolves.toBe(false);
+  });
+
+  it("uses all configured suites when generating tests without --suite", async () => {
+    const project = await createConfigProject({
+      captures: {
+        smoke: ["captures/smoke/*.json"],
+        regression: ["captures/regression/*.json"],
+      },
+    });
+    await writeJson(path.join(project, "captures/smoke/search.json"), {
+      name: "search_docs",
+      arguments: {
+        query: "smoke",
+      },
+    });
+    await writeJson(path.join(project, "captures/regression/search.json"), {
+      name: "search_docs",
+      arguments: {
+        query: "regression",
+      },
+    });
+
+    await expect(runCliCommand(["generate-tests", "--cwd", project])).resolves.toMatchObject({
+      kind: "success",
+      exitCode: 0,
+      report: {
+        generatedTests: {
+          captureFiles: ["captures/smoke/search.json", "captures/regression/search.json"],
+        },
+      },
+    });
+  });
+
+  it("reports missing capture config for generated tests", async () => {
+    const project = await createConfigProject();
+
+    await expect(runCliCommand(["generate-tests", "--cwd", project])).resolves.toMatchObject({
+      kind: "success",
+      exitCode: 1,
+      report: {
+        findings: [
+          {
+            id: "generated-test.no-captures",
+            severity: "error",
+          },
+        ],
+        generatedTests: {
+          outFile: "test/tool-call-contract.generated.test.ts",
+          captureFiles: [],
+          unchanged: true,
+        },
+      },
+    });
+  });
+
+  it("reports unknown suites for generated tests", async () => {
+    const project = await createConfigProject({
+      captures: {
+        smoke: ["captures/smoke/*.json"],
+      },
+    });
+
+    await expect(
+      runCliCommand(["generate-tests", "--cwd", project, "--suite", "regression"]),
+    ).resolves.toMatchObject({
+      kind: "success",
+      exitCode: 1,
+      report: {
+        findings: [
+          {
+            id: "capture.suite-unknown",
+            severity: "error",
+          },
+        ],
+      },
+    });
+  });
 });
 
 describe("runCli", () => {
@@ -799,7 +1551,7 @@ describe("runCli", () => {
 
     expect(exitCode).toBe(2);
     expect(output.stdout).toBe("");
-    expect(output.stderr).toBe("validate requires at least one file.\n");
+    expect(output.stderr).toBe("validate requires at least one file or --suite.\n");
   });
 
   it("prints deterministic JSON validation output", async () => {
@@ -826,6 +1578,25 @@ describe("runCli", () => {
         validResults: 1,
         invalidResults: 0,
       },
+      validation: {
+        suites: [],
+        files: [
+          {
+            path: "valid.json",
+            suiteNames: [],
+            validResults: 1,
+            invalidResults: 0,
+          },
+        ],
+        contracts: [
+          {
+            name: "search_docs",
+            validResults: 1,
+            invalidResults: 0,
+            unknownResults: 0,
+          },
+        ],
+      },
       results: [
         {
           ok: true,
@@ -834,6 +1605,52 @@ describe("runCli", () => {
         },
       ],
     });
+    expect(output.stderr).toBe("");
+  });
+
+  it("prints human validation grouping for suite runs", async () => {
+    const project = await createConfigProject({
+      captures: {
+        smoke: ["captures/smoke/*.json"],
+      },
+    });
+    const output = createCliOutput();
+    await writeJson(path.join(project, "captures/smoke/search.json"), {
+      name: "search_docs",
+      arguments: {
+        query: "human",
+      },
+    });
+
+    const exitCode = await runCli(["validate", "--cwd", project, "--suite", "smoke"], output.io);
+
+    expect(exitCode).toBe(0);
+    expect(output.stdout).toContain("Validation suites:\n  smoke: 1 file(s), 1 valid, 0 invalid");
+    expect(output.stdout).toContain(
+      "Validation files:\n  captures/smoke/search.json: smoke, 1 valid, 0 invalid",
+    );
+    expect(output.stderr).toBe("");
+  });
+
+  it("prints human redaction output", async () => {
+    const project = await createConfigProject({
+      redaction: {
+        paths: ["arguments.email"],
+      },
+    });
+    const output = createCliOutput();
+    await writeJson(path.join(project, "raw.json"), {
+      arguments: {
+        email: "user@example.com",
+      },
+    });
+
+    const exitCode = await runCli(["redact", "--cwd", project, "raw.json"], output.io);
+
+    expect(exitCode).toBe(0);
+    expect(output.stdout).toContain("tool-call-contract redact");
+    expect(output.stdout).toContain("Redaction: 1 changed, 0 unchanged.");
+    expect(output.stdout).toContain("changed raw.json: 1 replacement(s)");
     expect(output.stderr).toBe("");
   });
 });
@@ -861,6 +1678,11 @@ interface ConfigProjectOptions {
   rootStringSchema?: boolean;
   description?: string;
   extraContract?: boolean;
+  captures?: Record<string, readonly string[]>;
+  redaction?: {
+    paths: readonly string[];
+    replacement?: string;
+  };
 }
 
 async function createConfigProject(options: ConfigProjectOptions = {}): Promise<string> {
@@ -880,6 +1702,14 @@ async function writeProjectConfig(
     ? ""
     : (options.description ?? "Search documentation.");
   const schema = options.rootStringSchema ? "z.string()" : "z.object({ query: z.string() })";
+  const captures = options.captures
+    ? `,
+  captures: ${JSON.stringify(options.captures, null, 2)}`
+    : "";
+  const redaction = options.redaction
+    ? `,
+  redaction: ${JSON.stringify(options.redaction, null, 2)}`
+    : "";
 
   await writeFile(
     path.join(project, "tool-call-contract.config.ts"),
@@ -903,7 +1733,7 @@ const createIssue = defineToolContract({
 });
 
 export default defineConfig({
-  contracts: [configuredSearchDocs${options.extraContract ? ", createIssue" : ""}],
+  contracts: [configuredSearchDocs${options.extraContract ? ", createIssue" : ""}]${captures}${redaction},
 });
 `,
   );
@@ -919,5 +1749,6 @@ async function fileExists(file: string): Promise<boolean> {
 }
 
 async function writeJson(file: string, value: unknown): Promise<void> {
+  await mkdir(path.dirname(file), { recursive: true });
   await writeFile(file, `${JSON.stringify(value, null, 2)}\n`);
 }

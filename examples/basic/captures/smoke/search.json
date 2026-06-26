@@ -1,0 +1,8 @@
+{
+  "name": "search_knowledge_base",
+  "arguments": {
+    "query": "How do billing exports work?",
+    "product": "billing",
+    "limit": 3
+  }
+}

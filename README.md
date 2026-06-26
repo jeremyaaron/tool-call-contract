@@ -49,6 +49,13 @@ const createIssue = defineToolContract({
 
 export default defineConfig({
   contracts: [searchKnowledgeBase, createIssue],
+  captures: {
+    smoke: ["captures/smoke/*.json"],
+    regression: ["captures/regression/*.json"],
+  },
+  redaction: {
+    paths: ["arguments.email", "metadata.authorization"],
+  },
 });
 ```
 
@@ -112,6 +119,13 @@ Validate one or more captured JSON files:
 npx tool-call-contract validate captures/*.json
 ```
 
+Or define named capture suites in config and validate them with a stable CI command:
+
+```sh
+npx tool-call-contract validate --suite smoke
+npx tool-call-contract validate --suite regression --json
+```
+
 Supported MVP capture shapes:
 
 ```json
@@ -164,6 +178,81 @@ Use `--json` for deterministic machine-readable output:
 npx tool-call-contract validate --json captures/*.json
 ```
 
+JSON validation reports include grouped metadata for suites, files, and contracts while preserving the per-call `results` array.
+
+## Redact Captures
+
+Captured traces often include customer text, emails, request metadata, or tokens. Configure deterministic redaction paths:
+
+```ts
+export default defineConfig({
+  contracts: [searchKnowledgeBase, createIssue],
+  redaction: {
+    paths: ["arguments.email", "metadata.authorization"],
+    replacement: "[REDACTED]",
+  },
+});
+```
+
+Then redact files in place:
+
+```sh
+npx tool-call-contract redact captures/raw.json
+```
+
+Preview or enforce redaction in CI:
+
+```sh
+npx tool-call-contract redact --dry-run --suite regression
+npx tool-call-contract redact --check --suite regression
+```
+
+Write redacted copies instead of mutating the source files:
+
+```sh
+npx tool-call-contract redact captures/raw.json --out captures/safe/raw.json
+npx tool-call-contract redact --suite regression --out-dir captures/redacted
+```
+
+Redaction is deterministic path replacement, not PII detection. Choose paths that match your capture format before committing traces.
+
+## Generate Regression Tests
+
+Turn configured capture suites into a plain Vitest test file:
+
+```sh
+npx tool-call-contract generate-tests --suite regression
+```
+
+By default this writes:
+
+```text
+test/tool-call-contract.generated.test.ts
+```
+
+Use a custom output path or preview the write:
+
+```sh
+npx tool-call-contract generate-tests --out tests/tool-calls.generated.test.ts
+npx tool-call-contract generate-tests --suite regression --dry-run
+```
+
+Generated tests read capture JSON at runtime and call `validateToolCalls(config.contracts, capture)`. They do not call model APIs and do not execute tool handlers.
+
+Useful package scripts:
+
+```json
+{
+  "scripts": {
+    "tool-contracts:check": "tool-call-contract check",
+    "tool-contracts:generate": "tool-call-contract generate",
+    "tool-contracts:validate": "tool-call-contract validate --suite regression",
+    "tool-contracts:redact": "tool-call-contract redact --check --suite regression",
+    "tool-contracts:tests": "tool-call-contract generate-tests --suite regression"
+  }
+}
+```
+
 ## Library Usage
 
 ```ts
@@ -190,10 +279,12 @@ This repository includes an executable example at [examples/basic](examples/basi
 ```sh
 npx tool-call-contract check --cwd examples/basic
 npx tool-call-contract generate --cwd examples/basic
-npx tool-call-contract validate --cwd examples/basic captures/valid.json
+npx tool-call-contract validate --cwd examples/basic --suite smoke
+npx tool-call-contract redact --cwd examples/basic --check --suite regression
+npx tool-call-contract generate-tests --cwd examples/basic --suite regression
 ```
 
-The example defines three contracts and includes valid, invalid, and OpenAI-style captured calls.
+The example defines three contracts and includes direct captures, OpenAI-style captures, capture suites, an already-redacted regression capture, and generated-test output.
 
 ## Config Loading Is Trusted Code
 
@@ -213,7 +304,7 @@ This verifies linting, formatting, types, tests, build output, package metadata,
 npm publish --auth-type=web
 ```
 
-After the package exists on npm, tagged releases can use GitHub trusted publishing. See [release docs](docs/release.md).
+After the package exists on npm, tagged releases can use GitHub trusted publishing. See [v0.2 release notes](docs/v0.2.0/release.md).
 
 ## Known Limitations
 
@@ -222,11 +313,16 @@ After the package exists on npm, tagged releases can use GitHub trusted publishi
 - Fixture synthesis intentionally supports a conservative subset of JSON Schema.
 - OpenAI export is the only provider schema output in the MVP.
 - `validate` accepts JSON captures only.
+- `redact` is deterministic path replacement, not automatic sensitive-data discovery.
+- Generated tests target Vitest first and intentionally avoid custom matchers.
 - The CLI does not call model APIs and does not execute tool implementations.
 
 ## Project Docs
 
-- [PRD](docs/prd.md)
-- [Technical design](docs/technical-design.md)
-- [Implementation plan](docs/implementation-plan.md)
-- [Release](docs/release.md)
+- [v0.1 PRD](docs/v0.1.0/prd.md)
+- [v0.1 technical design](docs/v0.1.0/technical-design.md)
+- [v0.1 implementation plan](docs/v0.1.0/implementation-plan.md)
+- [v0.2 PRD](docs/v0.2.0/prd.md)
+- [v0.2 technical design](docs/v0.2.0/technical-design.md)
+- [v0.2 implementation plan](docs/v0.2.0/implementation-plan.md)
+- [v0.2 release notes](docs/v0.2.0/release.md)

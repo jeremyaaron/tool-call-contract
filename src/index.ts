@@ -1,7 +1,9 @@
 export {
   defineConfig,
   defineToolContract,
+  type CaptureSuiteConfig,
   type DefineToolContractInput,
+  type RedactionConfig,
   type ToolCallContractConfig,
   type ToolContract,
   type ZodSchema,
@@ -16,6 +18,7 @@ export {
 } from "./validation.js";
 export {
   createCommandReport,
+  createValidationReportMetadata,
   hasBlockingFailures,
   renderHumanReport,
   renderJsonReport,
@@ -23,8 +26,11 @@ export {
   type CommandName,
   type CommandReport,
   type Finding,
+  type GeneratedTestReportMetadata,
   type ReportSummary,
+  type RedactionReportMetadata,
   type Severity,
+  type ValidationReportMetadata,
 } from "./reporting.js";
 export { ConfigLoadError, defaultConfigFiles, loadConfig, type LoadedConfig } from "./config.js";
 export { createContractRegistry, type ContractRegistry } from "./registry.js";
@@ -76,4 +82,4 @@ export {
   type PlannedArtifactWrite,
 } from "./artifact-writer.js";
 
-export const version = "0.1.1";
+export const version = "0.2.0";

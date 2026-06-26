@@ -6,10 +6,11 @@ const context = canvas.getContext("2d");
 const nodes = [
   { label: "contract", color: "#207a74", x: 0.18, y: 0.36, vx: 0.18, vy: 0.1 },
   { label: "zod", color: "#6c3d7c", x: 0.34, y: 0.24, vx: -0.12, vy: 0.16 },
-  { label: "fixtures", color: "#b46625", x: 0.56, y: 0.34, vx: 0.16, vy: -0.12 },
+  { label: "suites", color: "#b46625", x: 0.56, y: 0.34, vx: 0.16, vy: -0.12 },
   { label: "schemas", color: "#b84f61", x: 0.72, y: 0.5, vx: -0.16, vy: 0.12 },
-  { label: "docs", color: "#207a74", x: 0.44, y: 0.64, vx: 0.12, vy: -0.14 },
+  { label: "redact", color: "#207a74", x: 0.44, y: 0.64, vx: 0.12, vy: -0.14 },
   { label: "validate", color: "#6c3d7c", x: 0.82, y: 0.22, vx: -0.1, vy: -0.16 },
+  { label: "tests", color: "#b46625", x: 0.66, y: 0.72, vx: -0.12, vy: 0.1 },
 ].map((node) => ({ ...node }));
 
 let width = 0;

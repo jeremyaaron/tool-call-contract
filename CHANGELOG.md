@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.2.0
+
+Captured-call regression workflow release.
+
+- Added named capture suites with `validate --suite`.
+- Added grouped validation report metadata for suites, files, and contracts.
+- Added deterministic capture redaction with `redact`, `--check`, `--dry-run`, `--out`, and `--out-dir`.
+- Added `generate-tests` to create plain Vitest regression tests from configured capture suites.
+- Expanded the example project and README to demonstrate capture suites, redaction, and generated tests.
+
 ## 0.1.1
 
 Maintenance patch.

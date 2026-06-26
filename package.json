@@ -1,6 +1,6 @@
 {
   "name": "tool-call-contract",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "description": "Define AI tool contracts once, then validate calls and generate test artifacts.",
   "license": "MIT",
   "repository": {
@@ -12,6 +12,7 @@
   },
   "homepage": "https://jeremyaaron.github.io/tool-call-contract/",
   "type": "module",
+  "types": "./dist/index.d.ts",
   "bin": {
     "tool-call-contract": "dist/cli/index.js"
   },
@@ -38,6 +39,11 @@
     "typecheck": "tsc --noEmit",
     "verify:release": "npm run lint && npm run format && npm run typecheck && npm test && npm run build && npm run pack:check && npm run smoke:package"
   },
+  "pkgGuard": {
+    "ignore": [
+      "typescript.types-source-file"
+    ]
+  },
   "keywords": [
     "ai",
     "agents",
@@ -60,7 +66,7 @@
     "@eslint/js": "^9.0.0",
     "@types/node": "^20.0.0",
     "eslint": "^9.0.0",
-    "pkg-guard": "^0.1.1",
+    "pkg-guard": "^0.3.0",
     "prettier": "^3.0.0",
     "tsup": "^8.0.0",
     "typescript": "^5.5.0",
@@ -69,6 +75,7 @@
     "zod": "^4.0.0"
   },
   "dependencies": {
-    "jiti": "^2.7.0"
+    "jiti": "^2.7.0",
+    "tinyglobby": "^0.2.17"
   }
 }

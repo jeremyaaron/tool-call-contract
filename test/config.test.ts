@@ -38,6 +38,24 @@ describe("loadConfig", () => {
     expect(loaded.outDir).toBe(path.join(realProject, "generated"));
   });
 
+  it("loads capture suites and redaction config", async () => {
+    const project = await createConfigProject("tool-call-contract.config.ts", {
+      captures: true,
+      redaction: true,
+    });
+
+    const loaded = await loadConfig({ cwd: project });
+
+    expect(loaded.config.captures).toEqual({
+      smoke: ["captures/smoke/*.json"],
+      regression: ["captures/regression/**/*.json"],
+    });
+    expect(loaded.config.redaction).toEqual({
+      paths: ["arguments.email", "metadata.authorization"],
+      replacement: "[SAFE]",
+    });
+  });
+
   it("reports a missing config", async () => {
     const project = await createTempDir();
 
@@ -53,6 +71,71 @@ describe("loadConfig", () => {
     await expect(loadConfig({ cwd: project })).rejects.toMatchObject({
       code: "config.invalid",
       message: 'Config field "contracts" must be an array.',
+    });
+  });
+
+  it("reports invalid capture config shape", async () => {
+    const project = await createTempDir();
+    await writeFile(
+      path.join(project, "tool-call-contract.config.mjs"),
+      "export default { contracts: [], captures: [] };\n",
+    );
+
+    await expect(loadConfig({ cwd: project })).rejects.toMatchObject({
+      code: "config.invalid",
+      message: 'Config field "captures" must be an object.',
+    });
+  });
+
+  it("reports invalid capture suite names", async () => {
+    const project = await createTempDir();
+    await writeFile(
+      path.join(project, "tool-call-contract.config.mjs"),
+      'export default { contracts: [], captures: { "": ["captures/*.json"] } };\n',
+    );
+
+    await expect(loadConfig({ cwd: project })).rejects.toMatchObject({
+      code: "config.invalid",
+      message: "Config capture suite names must be non-empty strings.",
+    });
+  });
+
+  it("reports empty capture suite patterns", async () => {
+    const project = await createTempDir();
+    await writeFile(
+      path.join(project, "tool-call-contract.config.mjs"),
+      'export default { contracts: [], captures: { smoke: [""] } };\n',
+    );
+
+    await expect(loadConfig({ cwd: project })).rejects.toMatchObject({
+      code: "config.invalid",
+      message: 'Config captures for "smoke" must not contain empty patterns.',
+    });
+  });
+
+  it("reports invalid redaction config shape", async () => {
+    const project = await createTempDir();
+    await writeFile(
+      path.join(project, "tool-call-contract.config.mjs"),
+      "export default { contracts: [], redaction: { paths: [123] } };\n",
+    );
+
+    await expect(loadConfig({ cwd: project })).rejects.toMatchObject({
+      code: "config.invalid",
+      message: 'Config field "redaction.paths" must be an array of strings.',
+    });
+  });
+
+  it("reports empty redaction paths", async () => {
+    const project = await createTempDir();
+    await writeFile(
+      path.join(project, "tool-call-contract.config.mjs"),
+      'export default { contracts: [], redaction: { paths: [""] } };\n',
+    );
+
+    await expect(loadConfig({ cwd: project })).rejects.toMatchObject({
+      code: "config.invalid",
+      message: 'Config field "redaction.paths" must not contain empty paths.',
     });
   });
 
@@ -112,6 +195,8 @@ async function createConfigProject(
   configName: string,
   options: {
     duplicate?: boolean;
+    captures?: boolean;
+    redaction?: boolean;
   } = {},
 ): Promise<string> {
   const project = await createTempDir();
@@ -127,6 +212,20 @@ const duplicateSearchDocs = defineToolContract({
 `
     : "";
   const duplicateEntry = options.duplicate ? ", duplicateSearchDocs" : "";
+  const capturesEntry = options.captures
+    ? `,
+  captures: {
+    smoke: ["captures/smoke/*.json"],
+    regression: ["captures/regression/**/*.json"]
+  }`
+    : "";
+  const redactionEntry = options.redaction
+    ? `,
+  redaction: {
+    paths: ["arguments.email", "metadata.authorization"],
+    replacement: "[SAFE]"
+  }`
+    : "";
 
   await writeFile(
     path.join(project, configName),
@@ -146,7 +245,7 @@ export default defineConfig({
   contracts: [searchDocs${duplicateEntry}],
   examples: {
     search_docs: [{ query: "config" }]
-  }
+  }${capturesEntry}${redactionEntry}
 });
 `,
   );
