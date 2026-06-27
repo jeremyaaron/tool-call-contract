@@ -710,21 +710,27 @@ function validateNormalizeUsage(
     };
   }
 
-  if (!options.dryRun) {
+  if (options.check && options.dryRun) {
     return {
-      message: "normalize currently requires --dry-run.",
-    };
-  }
-
-  if (options.check) {
-    return {
-      message: "--check is not available for normalize until write support is enabled.",
+      message: "--check and --dry-run cannot be used together.",
     };
   }
 
   if (options.out && options.outDir) {
     return {
       message: "--out and --out-dir cannot be used together.",
+    };
+  }
+
+  if (options.check && !options.out && !options.outDir) {
+    return {
+      message: "normalize --check requires --out or --out-dir.",
+    };
+  }
+
+  if (!options.dryRun && !options.out && !options.outDir) {
+    return {
+      message: "normalize writes require --out or --out-dir.",
     };
   }
 

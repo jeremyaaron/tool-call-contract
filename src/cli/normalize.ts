@@ -1,9 +1,13 @@
-import { readFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 import type { CaptureFileRef } from "../captures.js";
 import type { GenericNormalizationConfig } from "../contracts.js";
-import { planNormalizationWrites, type NormalizationInputFile } from "../normalization-writer.js";
+import {
+  planNormalizationWrites,
+  type NormalizationInputFile,
+  type NormalizationWritePlanEntry,
+} from "../normalization-writer.js";
 import type { NormalizationFormat } from "../normalization.js";
 import type { Finding, NormalizationReportMetadata } from "../reporting.js";
 
@@ -38,9 +42,14 @@ export async function normalizeCaptureFiles(
     outDir: options.outDir,
     check: options.check,
   });
+  const preWriteFindings = [...read.findings, ...plan.findings];
+  const writeFindings =
+    options.check || options.dryRun || hasErrorFindings(preWriteFindings)
+      ? []
+      : await writeNormalizedFiles(options.cwd, plan.entries);
 
   return {
-    findings: [...read.findings, ...plan.findings],
+    findings: [...preWriteFindings, ...writeFindings],
     normalization: {
       format: options.format,
       includeSource: options.includeSource,
@@ -56,6 +65,36 @@ export async function normalizeCaptureFiles(
       })),
     },
   };
+}
+
+async function writeNormalizedFiles(
+  cwd: string,
+  entries: readonly NormalizationWritePlanEntry[],
+): Promise<Finding[]> {
+  const findings: Finding[] = [];
+
+  for (const entry of entries) {
+    if (!entry.changed || !entry.content || !entry.outputPath) {
+      continue;
+    }
+
+    const outputPath = path.resolve(cwd, entry.outputPath);
+
+    try {
+      await mkdir(path.dirname(outputPath), { recursive: true });
+      await writeFile(outputPath, entry.content, "utf8");
+    } catch (error) {
+      findings.push({
+        id: "normalize.write-failed",
+        severity: "error",
+        title: "Normalized capture file could not be written",
+        message: `Could not write normalized capture file: ${formatErrorMessage(error)}`,
+        file: entry.outputPath,
+      });
+    }
+  }
+
+  return findings;
 }
 
 async function readNormalizationInputs(
@@ -93,4 +132,8 @@ async function readNormalizationInputs(
 
 function formatErrorMessage(error: unknown): string {
   return error instanceof Error ? error.message : "Unknown file error.";
+}
+
+function hasErrorFindings(findings: readonly Finding[]): boolean {
+  return findings.some((finding) => finding.severity === "error");
 }
