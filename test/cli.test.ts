@@ -1229,6 +1229,9 @@ describe("runCliCommand", () => {
         command: "normalize",
         normalization: {
           format: "langchain",
+          includeSource: false,
+          dryRun: true,
+          checked: false,
           files: [
             {
               inputPath: "raw.json",
@@ -1270,12 +1273,18 @@ describe("runCliCommand", () => {
       exitCode: 0,
       report: {
         normalization: {
+          format: "openai-responses",
+          includeSource: false,
+          dryRun: false,
+          checked: false,
           files: [
             {
               inputPath: "raw.json",
               outputPath: "captures/regression/search.json",
+              callsFound: 1,
               changed: true,
               callsWritten: 1,
+              skipped: 0,
             },
           ],
         },
@@ -1432,9 +1441,17 @@ describe("runCliCommand", () => {
       exitCode: 0,
       report: {
         normalization: {
+          format: "openai-responses",
+          includeSource: false,
+          dryRun: false,
           checked: true,
           files: [
             {
+              inputPath: "raw.json",
+              outputPath: "captures/regression/search.json",
+              callsFound: 1,
+              callsWritten: 1,
+              skipped: 0,
               changed: false,
             },
           ],
@@ -1517,6 +1534,19 @@ describe("runCliCommand", () => {
             severity: "error",
           },
         ],
+        normalization: {
+          checked: true,
+          files: [
+            {
+              inputPath: "raw.json",
+              outputPath: "captures/regression/search.json",
+              callsFound: 1,
+              callsWritten: 1,
+              skipped: 0,
+              changed: true,
+            },
+          ],
+        },
       },
     });
     await expect(
@@ -2162,6 +2192,41 @@ describe("runCli", () => {
     expect(output.stdout).toContain("tool-call-contract redact");
     expect(output.stdout).toContain("Redaction: 1 changed, 0 unchanged.");
     expect(output.stdout).toContain("changed raw.json: 1 replacement(s)");
+    expect(output.stderr).toBe("");
+  });
+
+  it("prints human normalization output", async () => {
+    const project = await createConfigProject();
+    const output = createCliOutput();
+    await writeJson(path.join(project, "raw.json"), {
+      output: [
+        {
+          type: "function_call",
+          name: "search_docs",
+          arguments: JSON.stringify({ query: "human" }),
+        },
+      ],
+    });
+
+    const exitCode = await runCli(
+      [
+        "normalize",
+        "--cwd",
+        project,
+        "raw.json",
+        "--format",
+        "openai-responses",
+        "--out",
+        "captures/regression/search.json",
+      ],
+      output.io,
+    );
+
+    expect(exitCode).toBe(0);
+    expect(output.stdout).toContain("tool-call-contract normalize");
+    expect(output.stdout).toContain("Normalization: openai-responses, 1 changed, 0 unchanged.");
+    expect(output.stdout).toContain("changed raw.json -> captures/regression/search.json");
+    expect(output.stdout).toContain("calls found: 1, written: 1, skipped: 0");
     expect(output.stderr).toBe("");
   });
 });

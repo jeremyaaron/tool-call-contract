@@ -480,8 +480,9 @@ function pushNormalizationMetadata(
   for (const file of normalization.files) {
     const state = file.changed ? "changed" : "unchanged";
     const destination = file.outputPath ? ` -> ${file.outputPath}` : "";
+    lines.push(`  ${state} ${file.inputPath}${destination}`);
     lines.push(
-      `  ${state} ${file.inputPath}${destination}: ${file.callsWritten}/${file.callsFound} call(s), ${file.skipped} skipped`,
+      `    calls found: ${file.callsFound}, written: ${file.callsWritten}, skipped: ${file.skipped}`,
     );
   }
 }
