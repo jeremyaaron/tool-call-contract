@@ -14,6 +14,7 @@ export interface NormalizeToolCallsOptions {
   format: NormalizationFormat;
   includeSource?: boolean;
   generic?: GenericNormalizationConfig;
+  allowNonObjectArguments?: boolean;
 }
 
 export interface NormalizeToolCallsResult {
@@ -762,7 +763,7 @@ function finalizeToolCall(
 ): { ok: true; call: NormalizedToolCall } | { ok: false; issues: ToolCallIssue[] } {
   const issues: ToolCallIssue[] = [];
   const name = normalizeName(raw.name, path);
-  const args = normalizeArguments(raw.arguments, raw.hasArguments, path);
+  const args = normalizeArguments(raw.arguments, raw.hasArguments, path, options);
 
   if (!name.ok || !args.ok) {
     if (!name.ok) {
@@ -837,10 +838,11 @@ function normalizeArguments(
   value: unknown,
   hasArguments: boolean,
   path: Array<string | number>,
+  options: NormalizeToolCallsOptions,
 ):
   | {
       ok: true;
-      value: Record<string, unknown>;
+      value: unknown;
     }
   | {
       ok: false;
@@ -862,6 +864,13 @@ function normalizeArguments(
   const parsed = parseArgumentValue(value, path);
   if (!parsed.ok) {
     return parsed;
+  }
+
+  if (options.allowNonObjectArguments) {
+    return {
+      ok: true,
+      value: parsed.value,
+    };
   }
 
   if (!isRecord(parsed.value)) {

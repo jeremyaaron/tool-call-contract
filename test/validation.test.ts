@@ -250,6 +250,52 @@ describe("validateToolCalls", () => {
     ]);
   });
 
+  it("validates OpenAI Responses calls nested under output", () => {
+    const results = validateToolCalls([createIssue, searchDocs], {
+      output: [
+        {
+          type: "message",
+          content: [],
+        },
+        {
+          type: "function_call",
+          call_id: "call_search",
+          name: "search_docs",
+          arguments: JSON.stringify({ query: "responses" }),
+        },
+        {
+          type: "function_call",
+          call_id: "call_issue",
+          name: "create_issue",
+          arguments: JSON.stringify({
+            title: "Fixture",
+            body: "From Responses output.",
+          }),
+        },
+      ],
+    });
+
+    expect(results).toHaveLength(2);
+    expect(results).toMatchObject([
+      {
+        ok: true,
+        contractName: "search_docs",
+        call: {
+          id: "call_search",
+          source: "openai-responses",
+        },
+      },
+      {
+        ok: true,
+        contractName: "create_issue",
+        call: {
+          id: "call_issue",
+          source: "openai-responses",
+        },
+      },
+    ]);
+  });
+
   it("validates OpenAI calls nested under choices", () => {
     const results = validateToolCalls([searchDocs], {
       choices: [
