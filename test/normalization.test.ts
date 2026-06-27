@@ -232,19 +232,6 @@ describe("normalizeToolCallCaptures", () => {
     });
   });
 
-  it("reports unsupported formats until provider extractors are implemented", () => {
-    expect(normalizeToolCallCaptures({}, { format: "openai-chat" })).toEqual({
-      calls: [],
-      issues: [
-        {
-          code: "normalize.format-unsupported",
-          message: 'Normalization format "openai-chat" is not implemented yet.',
-        },
-      ],
-      skipped: 0,
-    });
-  });
-
   it("exports public normalization types", () => {
     const format: NormalizationFormat = "normalized";
     const options: NormalizeToolCallsOptions = { format };
@@ -254,6 +241,366 @@ describe("normalizeToolCallCaptures", () => {
     );
 
     expect(result.calls).toHaveLength(1);
+  });
+});
+
+describe("provider and framework normalization formats", () => {
+  it("extracts OpenAI Chat completion tool calls", () => {
+    expect(
+      normalizeToolCallCaptures(
+        {
+          choices: [
+            {
+              message: {
+                tool_calls: [
+                  {
+                    id: "call_123",
+                    type: "function",
+                    function: {
+                      name: "create_issue",
+                      arguments: '{"title":"Bug"}',
+                    },
+                  },
+                ],
+              },
+            },
+          ],
+        },
+        { format: "openai-chat", includeSource: true },
+      ),
+    ).toEqual({
+      calls: [
+        {
+          name: "create_issue",
+          arguments: {
+            title: "Bug",
+          },
+          id: "call_123",
+          source: "openai-chat",
+        },
+      ],
+      issues: [],
+      skipped: 0,
+    });
+  });
+
+  it("extracts OpenAI Chat message roots and skips non-function calls", () => {
+    expect(
+      normalizeToolCallCaptures(
+        {
+          role: "assistant",
+          tool_calls: [
+            {
+              id: "call_123",
+              type: "function",
+              function: {
+                name: "create_issue",
+                arguments: {
+                  title: "Bug",
+                },
+              },
+            },
+            {
+              type: "custom",
+            },
+          ],
+        },
+        { format: "openai-chat" },
+      ),
+    ).toMatchObject({
+      calls: [
+        {
+          name: "create_issue",
+          arguments: {
+            title: "Bug",
+          },
+        },
+      ],
+      issues: [],
+      skipped: 1,
+    });
+  });
+
+  it("extracts OpenAI Responses function calls", () => {
+    expect(
+      normalizeToolCallCaptures(
+        {
+          output: [
+            {
+              type: "message",
+              content: [],
+            },
+            {
+              type: "function_call",
+              call_id: "call_123",
+              name: "create_issue",
+              arguments: '{"title":"Bug"}',
+            },
+          ],
+        },
+        { format: "openai-responses", includeSource: true },
+      ),
+    ).toEqual({
+      calls: [
+        {
+          name: "create_issue",
+          arguments: {
+            title: "Bug",
+          },
+          id: "call_123",
+          source: "openai-responses",
+        },
+      ],
+      issues: [],
+      skipped: 1,
+    });
+  });
+
+  it("extracts direct OpenAI Responses function call items", () => {
+    expect(
+      normalizeToolCallCaptures(
+        {
+          type: "function_call",
+          call_id: "call_123",
+          name: "create_issue",
+          arguments: {
+            title: "Bug",
+          },
+        },
+        { format: "openai-responses" },
+      ).calls,
+    ).toEqual([
+      {
+        name: "create_issue",
+        arguments: {
+          title: "Bug",
+        },
+      },
+    ]);
+  });
+
+  it("extracts Vercel AI SDK toolCalls", () => {
+    expect(
+      normalizeToolCallCaptures(
+        {
+          toolCalls: [
+            {
+              toolCallId: "call_123",
+              toolName: "create_issue",
+              args: {
+                title: "Bug",
+              },
+            },
+          ],
+        },
+        { format: "vercel-ai-sdk", includeSource: true },
+      ).calls,
+    ).toEqual([
+      {
+        name: "create_issue",
+        arguments: {
+          title: "Bug",
+        },
+        id: "call_123",
+        source: "vercel-ai-sdk",
+      },
+    ]);
+  });
+
+  it("extracts Vercel AI SDK tool parts", () => {
+    expect(
+      normalizeToolCallCaptures(
+        {
+          parts: [
+            {
+              type: "text",
+              text: "hello",
+            },
+            {
+              type: "tool-create_issue",
+              toolCallId: "call_123",
+              input: {
+                title: "Bug",
+              },
+            },
+          ],
+        },
+        { format: "vercel-ai-sdk" },
+      ),
+    ).toMatchObject({
+      calls: [
+        {
+          name: "create_issue",
+          arguments: {
+            title: "Bug",
+          },
+        },
+      ],
+      issues: [],
+      skipped: 1,
+    });
+  });
+
+  it("extracts LangChain tool calls", () => {
+    expect(
+      normalizeToolCallCaptures(
+        {
+          tool_calls: [
+            {
+              name: "create_issue",
+              args: {
+                title: "Bug",
+              },
+              id: "call_123",
+            },
+          ],
+        },
+        { format: "langchain", includeSource: true },
+      ).calls,
+    ).toEqual([
+      {
+        name: "create_issue",
+        arguments: {
+          title: "Bug",
+        },
+        id: "call_123",
+        source: "langchain",
+      },
+    ]);
+  });
+
+  it("extracts LangChain arrays of messages in input order", () => {
+    const result = normalizeToolCallCaptures(
+      [
+        {
+          tool_calls: [
+            {
+              name: "search_docs",
+              args: {
+                query: "billing",
+              },
+            },
+          ],
+        },
+        {
+          tool_calls: [
+            {
+              name: "create_issue",
+              args: {
+                title: "Bug",
+              },
+            },
+          ],
+        },
+      ],
+      { format: "langchain" },
+    );
+
+    expect(result.calls.map((call) => call.name)).toEqual(["search_docs", "create_issue"]);
+    expect(result).toMatchObject({
+      issues: [],
+      skipped: 0,
+    });
+  });
+
+  it("extracts generic tool calls from configured paths", () => {
+    expect(
+      normalizeToolCallCaptures(
+        {
+          events: [
+            {
+              toolCall: {
+                name: "create_issue",
+                arguments: '{"title":"Bug"}',
+                id: "call_123",
+              },
+            },
+          ],
+        },
+        {
+          format: "generic",
+          includeSource: true,
+          generic: {
+            callsPath: "events.*.toolCall",
+            namePath: "name",
+            argumentsPath: "arguments",
+            idPath: "id",
+          },
+        },
+      ),
+    ).toEqual({
+      calls: [
+        {
+          name: "create_issue",
+          arguments: {
+            title: "Bug",
+          },
+          id: "call_123",
+          source: "generic",
+        },
+      ],
+      issues: [],
+      skipped: 0,
+    });
+  });
+
+  it("reports missing generic config", () => {
+    expect(normalizeToolCallCaptures({}, { format: "generic" })).toMatchObject({
+      calls: [],
+      issues: [
+        {
+          code: "normalize.generic-config-missing",
+        },
+      ],
+      skipped: 0,
+    });
+  });
+
+  it("reports generic path ambiguity", () => {
+    expect(
+      normalizeToolCallCaptures(
+        {
+          events: [
+            {
+              toolCall: {
+                names: ["create_issue", "search_docs"],
+                arguments: {
+                  title: "Bug",
+                },
+              },
+            },
+          ],
+        },
+        {
+          format: "generic",
+          generic: {
+            callsPath: "events.*.toolCall",
+            namePath: "names.*",
+            argumentsPath: "arguments",
+          },
+        },
+      ),
+    ).toMatchObject({
+      calls: [],
+      issues: [
+        {
+          code: "normalize.path-ambiguous",
+        },
+      ],
+      skipped: 1,
+    });
+  });
+
+  it("reports no tool calls for unsupported roots", () => {
+    expect(normalizeToolCallCaptures({ choices: [] }, { format: "openai-chat" })).toMatchObject({
+      calls: [],
+      issues: [
+        {
+          code: "normalize.no-tool-calls",
+        },
+      ],
+      skipped: 0,
+    });
   });
 });
 
