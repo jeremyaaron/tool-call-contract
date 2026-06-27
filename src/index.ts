@@ -19,6 +19,13 @@ export {
   type ToolCallValidationResult,
 } from "./validation.js";
 export {
+  normalizeToolCallCapture,
+  normalizeToolCallCaptures,
+  type NormalizationFormat,
+  type NormalizeToolCallsOptions,
+  type NormalizeToolCallsResult,
+} from "./normalization.js";
+export {
   createCommandReport,
   createValidationReportMetadata,
   hasBlockingFailures,

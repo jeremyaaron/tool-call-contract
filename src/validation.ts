@@ -9,7 +9,14 @@ export interface NormalizedToolCall {
   source?: ToolCallSource;
 }
 
-export type ToolCallSource = "normalized" | "openai-chat" | "openai-responses" | "unknown";
+export type ToolCallSource =
+  | "normalized"
+  | "openai-chat"
+  | "openai-responses"
+  | "vercel-ai-sdk"
+  | "langchain"
+  | "generic"
+  | "unknown";
 
 export interface ToolCallIssue {
   code: string;
