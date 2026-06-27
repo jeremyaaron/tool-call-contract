@@ -1,4 +1,5 @@
 import type { CaptureFileRef } from "./captures.js";
+import type { NormalizationFormat } from "./normalization.js";
 import type { ToolCallValidationResult } from "./validation.js";
 
 export type Severity = "error" | "warning" | "info";
@@ -15,7 +16,13 @@ export interface Finding {
   path?: string;
 }
 
-export type CommandName = "check" | "generate" | "validate" | "redact" | "generate-tests";
+export type CommandName =
+  | "check"
+  | "generate"
+  | "validate"
+  | "redact"
+  | "generate-tests"
+  | "normalize";
 
 export interface ReportSummary {
   errors: number;
@@ -35,6 +42,7 @@ export interface CommandReport {
   validation?: ValidationReportMetadata;
   redaction?: RedactionReportMetadata;
   generatedTests?: GeneratedTestReportMetadata;
+  normalization?: NormalizationReportMetadata;
   artifacts?: {
     created: string[];
     updated: string[];
@@ -84,6 +92,21 @@ export interface GeneratedTestReportMetadata {
   unchanged: boolean;
 }
 
+export interface NormalizationReportMetadata {
+  format: NormalizationFormat;
+  includeSource: boolean;
+  dryRun: boolean;
+  checked: boolean;
+  files: Array<{
+    inputPath: string;
+    outputPath?: string;
+    callsFound: number;
+    callsWritten: number;
+    skipped: number;
+    changed: boolean;
+  }>;
+}
+
 export function createCommandReport(input: {
   command: CommandName;
   findings?: readonly Finding[];
@@ -92,6 +115,7 @@ export function createCommandReport(input: {
   validation?: ValidationReportMetadata;
   redaction?: RedactionReportMetadata;
   generatedTests?: GeneratedTestReportMetadata;
+  normalization?: NormalizationReportMetadata;
   artifacts?: CommandReport["artifacts"];
 }): CommandReport {
   const findings = [...(input.findings ?? [])];
@@ -109,6 +133,7 @@ export function createCommandReport(input: {
     ...(input.validation ? { validation: input.validation } : {}),
     ...(input.redaction ? { redaction: input.redaction } : {}),
     ...(input.generatedTests ? { generatedTests: input.generatedTests } : {}),
+    ...(input.normalization ? { normalization: input.normalization } : {}),
     ...(input.artifacts ? { artifacts: input.artifacts } : {}),
   };
 }
@@ -168,6 +193,7 @@ export function renderHumanReport(report: CommandReport): string {
   const validation = report.validation;
   const redaction = report.redaction;
   const generatedTests = report.generatedTests;
+  const normalization = report.normalization;
   const artifacts = report.artifacts;
 
   if (
@@ -176,6 +202,7 @@ export function renderHumanReport(report: CommandReport): string {
     !validation &&
     !redaction &&
     !generatedTests &&
+    !normalization &&
     !artifacts
   ) {
     lines.push("No findings.");
@@ -258,6 +285,10 @@ export function renderHumanReport(report: CommandReport): string {
 
   if (generatedTests) {
     pushGeneratedTestMetadata(lines, generatedTests);
+  }
+
+  if (normalization) {
+    pushNormalizationMetadata(lines, normalization);
   }
 
   return `${lines.join("\n")}\n`;
@@ -432,4 +463,25 @@ function pushGeneratedTestMetadata(
 
   lines.push(`Generated test: ${generatedTests.outFile} ${state}${suffix}.`);
   lines.push(`  Captures: ${generatedTests.captureFiles.length} file(s)`);
+}
+
+function pushNormalizationMetadata(
+  lines: string[],
+  normalization: NormalizationReportMetadata,
+): void {
+  const changed = normalization.files.filter((file) => file.changed).length;
+  const unchanged = normalization.files.length - changed;
+  const mode = normalization.checked ? " check" : normalization.dryRun ? " dry run" : "";
+
+  lines.push(
+    `Normalization${mode}: ${normalization.format}, ${changed} changed, ${unchanged} unchanged.`,
+  );
+
+  for (const file of normalization.files) {
+    const state = file.changed ? "changed" : "unchanged";
+    const destination = file.outputPath ? ` -> ${file.outputPath}` : "";
+    lines.push(
+      `  ${state} ${file.inputPath}${destination}: ${file.callsWritten}/${file.callsFound} call(s), ${file.skipped} skipped`,
+    );
+  }
 }

@@ -19,10 +19,12 @@ import {
 import { resolveCaptureFiles } from "../captures.js";
 import { runContractChecks } from "../checks.js";
 import { ConfigLoadError, loadConfig } from "../config.js";
+import type { NormalizationFormat } from "../normalization.js";
 import { createContractRegistry } from "../registry.js";
 import type { Finding } from "../reporting.js";
 import { analyzeRegistrySchemas } from "../schema.js";
 import { generateTests } from "./generate-tests.js";
+import { normalizeCaptureFiles } from "./normalize.js";
 import { redactCaptureFiles } from "./redact.js";
 import { validateCaptureFiles } from "./validate.js";
 
@@ -38,6 +40,7 @@ Commands:
   generate              Generate fixtures, schemas, docs, and manifest
   validate <files...>   Validate captured tool-call JSON files
   redact <files...>     Redact captured tool-call JSON files
+  normalize <files...>  Normalize raw tool-call traces into capture JSON
   generate-tests        Generate Vitest regression tests for captures
 
 Options:
@@ -47,6 +50,8 @@ Options:
       --config <path>   Load a specific config file
       --json            Print JSON output
       --suite <name>    Include a configured capture suite
+      --format <name>   Input format for normalize
+      --include-source  Include stable source/id metadata when normalizing
 `;
 
 export interface CliIo {
@@ -67,6 +72,8 @@ export interface CliOptions {
   outDir?: string;
   allowUnknown: boolean;
   suites: string[];
+  format?: NormalizationFormat;
+  includeSource: boolean;
 }
 
 export interface ParsedCliCommand {
@@ -102,6 +109,7 @@ const defaultOptions: CliOptions = {
   check: false,
   allowUnknown: false,
   suites: [],
+  includeSource: false,
 };
 
 export async function runCli(args: readonly string[], io: CliIo = consoleIo): Promise<number> {
@@ -256,6 +264,23 @@ export function parseCliArgs(args: readonly string[]): ParsedCliCommand | { mess
         index = value.index;
         break;
       }
+      case "--format": {
+        const value = readOptionValue(rest, index, arg);
+        if ("message" in value) {
+          return value;
+        }
+        if (!isNormalizationFormat(value.value)) {
+          return {
+            message: `Unknown normalization format "${value.value}".`,
+          };
+        }
+        options.format = value.value;
+        index = value.index;
+        break;
+      }
+      case "--include-source":
+        options.includeSource = true;
+        break;
       case "--ignore": {
         const value = readOptionValue(rest, index, arg);
         if ("message" in value) {
@@ -295,6 +320,17 @@ export function parseCliArgs(args: readonly string[]): ParsedCliCommand | { mess
     if (usage) {
       return usage;
     }
+  }
+
+  if (commandToken === "normalize") {
+    const usage = validateNormalizeUsage(files, options);
+    if (usage) {
+      return usage;
+    }
+  } else if (options.format || options.includeSource) {
+    return {
+      message: "--format and --include-source can only be used with normalize.",
+    };
   }
 
   return {
@@ -428,6 +464,51 @@ async function createCommandReportForParsedInput(parsed: ParsedCliCommand): Prom
       });
     }
 
+    if (parsed.command === "normalize") {
+      const format = parsed.options.format;
+      if (!format) {
+        return createCommandReport({
+          command: parsed.command,
+          findings: [
+            {
+              id: "normalize.format-required",
+              severity: "error",
+              title: "Normalization format is required",
+              message: "normalize requires --format.",
+            },
+          ],
+        });
+      }
+
+      const captures = await resolveCaptureFiles({
+        cwd: loaded.cwd,
+        captures: loaded.config.captures,
+        suites: parsed.options.suites,
+        files: parsed.files,
+      });
+      const normalization = await normalizeCaptureFiles({
+        cwd: loaded.cwd,
+        files: captures.files,
+        format,
+        includeSource: parsed.options.includeSource,
+        dryRun: parsed.options.dryRun,
+        check: parsed.options.check,
+        out: parsed.options.out,
+        outDir: parsed.options.outDir,
+        generic: loaded.config.normalization?.generic,
+      });
+      const findings = applyFindingPolicy(
+        [...captures.findings, ...normalization.findings],
+        parsed.options,
+      );
+
+      return createCommandReport({
+        command: parsed.command,
+        findings,
+        normalization: normalization.normalization,
+      });
+    }
+
     const artifactFindings =
       parsed.command === "check" ? await createArtifactFreshnessFindings(registry, roots) : [];
     const checkFindings =
@@ -556,7 +637,19 @@ function isCommandName(value: unknown): value is CommandName {
     value === "generate" ||
     value === "validate" ||
     value === "redact" ||
-    value === "generate-tests"
+    value === "generate-tests" ||
+    value === "normalize"
+  );
+}
+
+function isNormalizationFormat(value: string): value is NormalizationFormat {
+  return (
+    value === "normalized" ||
+    value === "openai-chat" ||
+    value === "openai-responses" ||
+    value === "vercel-ai-sdk" ||
+    value === "langchain" ||
+    value === "generic"
   );
 }
 
@@ -595,6 +688,49 @@ function validateGenerateTestsUsage(files: readonly string[]): { message: string
   if (files.length > 0) {
     return {
       message: "generate-tests does not accept file arguments.",
+    };
+  }
+
+  return undefined;
+}
+
+function validateNormalizeUsage(
+  files: readonly string[],
+  options: CliOptions,
+): { message: string } | undefined {
+  if (files.length === 0 && options.suites.length === 0) {
+    return {
+      message: "normalize requires at least one file or --suite.",
+    };
+  }
+
+  if (!options.format) {
+    return {
+      message: "normalize requires --format.",
+    };
+  }
+
+  if (!options.dryRun) {
+    return {
+      message: "normalize currently requires --dry-run.",
+    };
+  }
+
+  if (options.check) {
+    return {
+      message: "--check is not available for normalize until write support is enabled.",
+    };
+  }
+
+  if (options.out && options.outDir) {
+    return {
+      message: "--out and --out-dir cannot be used together.",
+    };
+  }
+
+  if (options.out && (files.length !== 1 || options.suites.length > 0)) {
+    return {
+      message: "--out requires exactly one direct file.",
     };
   }
 

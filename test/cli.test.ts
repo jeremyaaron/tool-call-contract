@@ -119,6 +119,32 @@ describe("parseCliArgs", () => {
     });
   });
 
+  it("parses normalize options", () => {
+    expect(
+      parseCliArgs([
+        "normalize",
+        "--suite",
+        "raw",
+        "--format",
+        "openai-responses",
+        "--include-source",
+        "--dry-run",
+        "--out-dir",
+        "captures/regression",
+      ]),
+    ).toMatchObject({
+      command: "normalize",
+      options: {
+        suites: ["raw"],
+        format: "openai-responses",
+        includeSource: true,
+        dryRun: true,
+        outDir: "captures/regression",
+      },
+      files: [],
+    });
+  });
+
   it("rejects unknown commands", () => {
     expect(parseCliArgs(["nope"])).toEqual({
       message: 'Unknown command "nope". Run tool-call-contract --help for usage.',
@@ -160,6 +186,29 @@ describe("parseCliArgs", () => {
   it("rejects generate-tests file arguments", () => {
     expect(parseCliArgs(["generate-tests", "captures/raw.json"])).toEqual({
       message: "generate-tests does not accept file arguments.",
+    });
+  });
+
+  it("rejects invalid normalize usage", () => {
+    expect(parseCliArgs(["normalize"])).toEqual({
+      message: "normalize requires at least one file or --suite.",
+    });
+    expect(parseCliArgs(["normalize", "raw.json"])).toEqual({
+      message: "normalize requires --format.",
+    });
+    expect(parseCliArgs(["normalize", "raw.json", "--format", "nope"])).toEqual({
+      message: 'Unknown normalization format "nope".',
+    });
+    expect(parseCliArgs(["normalize", "raw.json", "--format", "openai-chat"])).toEqual({
+      message: "normalize currently requires --dry-run.",
+    });
+    expect(
+      parseCliArgs(["normalize", "raw.json", "--format", "openai-chat", "--dry-run", "--check"]),
+    ).toEqual({
+      message: "--check is not available for normalize until write support is enabled.",
+    });
+    expect(parseCliArgs(["check", "--include-source"])).toEqual({
+      message: "--format and --include-source can only be used with normalize.",
     });
   });
 });
@@ -1009,6 +1058,183 @@ describe("runCliCommand", () => {
             severity: "error",
           },
         ],
+      },
+    });
+  });
+
+  it("normalizes a direct raw capture in dry-run mode", async () => {
+    const project = await createConfigProject();
+    await writeJson(path.join(project, "raw.json"), {
+      output: [
+        {
+          type: "function_call",
+          name: "search_docs",
+          arguments: JSON.stringify({ query: "billing" }),
+        },
+      ],
+    });
+
+    await expect(
+      runCliCommand([
+        "normalize",
+        "--cwd",
+        project,
+        "raw.json",
+        "--format",
+        "openai-responses",
+        "--dry-run",
+      ]),
+    ).resolves.toMatchObject({
+      kind: "success",
+      exitCode: 0,
+      report: {
+        normalization: {
+          format: "openai-responses",
+          dryRun: true,
+          checked: false,
+          files: [
+            {
+              inputPath: "raw.json",
+              callsFound: 1,
+              callsWritten: 1,
+              skipped: 0,
+              changed: true,
+            },
+          ],
+        },
+      },
+    });
+    await expect(fileExists(path.join(project, "raw.normalized.json"))).resolves.toBe(false);
+  });
+
+  it("normalizes configured raw suites in dry-run mode", async () => {
+    const project = await createConfigProject({
+      captures: {
+        raw: ["captures/raw/*.json"],
+      },
+    });
+    await writeJson(path.join(project, "captures/raw/openai.json"), {
+      output: [
+        {
+          type: "function_call",
+          call_id: "call_123",
+          name: "search_docs",
+          arguments: JSON.stringify({ query: "billing" }),
+        },
+      ],
+    });
+
+    await expect(
+      runCliCommand([
+        "normalize",
+        "--cwd",
+        project,
+        "--suite",
+        "raw",
+        "--format",
+        "openai-responses",
+        "--include-source",
+        "--dry-run",
+        "--out-dir",
+        "captures/regression",
+      ]),
+    ).resolves.toMatchObject({
+      kind: "success",
+      exitCode: 0,
+      report: {
+        normalization: {
+          format: "openai-responses",
+          includeSource: true,
+          dryRun: true,
+          files: [
+            {
+              inputPath: "captures/raw/openai.json",
+              outputPath: "captures/regression/openai.json",
+              callsFound: 1,
+              callsWritten: 1,
+              changed: true,
+            },
+          ],
+        },
+      },
+    });
+    await expect(fileExists(path.join(project, "captures/regression/openai.json"))).resolves.toBe(
+      false,
+    );
+  });
+
+  it("reports missing generic normalization config", async () => {
+    const project = await createConfigProject();
+    await writeJson(path.join(project, "raw.json"), {
+      events: [],
+    });
+
+    await expect(
+      runCliCommand([
+        "normalize",
+        "--cwd",
+        project,
+        "raw.json",
+        "--format",
+        "generic",
+        "--dry-run",
+      ]),
+    ).resolves.toMatchObject({
+      kind: "success",
+      exitCode: 1,
+      report: {
+        findings: [
+          {
+            id: "normalize.generic-config-missing",
+            severity: "error",
+          },
+        ],
+      },
+    });
+  });
+
+  it("returns deterministic JSON report metadata for normalize dry-run", async () => {
+    const project = await createConfigProject();
+    await writeJson(path.join(project, "raw.json"), {
+      tool_calls: [
+        {
+          name: "search_docs",
+          args: {
+            query: "billing",
+          },
+        },
+      ],
+    });
+
+    await expect(
+      runCliCommand([
+        "normalize",
+        "--cwd",
+        project,
+        "raw.json",
+        "--format",
+        "langchain",
+        "--dry-run",
+        "--json",
+      ]),
+    ).resolves.toMatchObject({
+      kind: "success",
+      exitCode: 0,
+      json: true,
+      report: {
+        schemaVersion: 1,
+        command: "normalize",
+        normalization: {
+          format: "langchain",
+          files: [
+            {
+              inputPath: "raw.json",
+              callsFound: 1,
+              callsWritten: 1,
+              skipped: 0,
+            },
+          ],
+        },
       },
     });
   });
