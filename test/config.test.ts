@@ -38,10 +38,11 @@ describe("loadConfig", () => {
     expect(loaded.outDir).toBe(path.join(realProject, "generated"));
   });
 
-  it("loads capture suites and redaction config", async () => {
+  it("loads capture suites, redaction config, and normalization config", async () => {
     const project = await createConfigProject("tool-call-contract.config.ts", {
       captures: true,
       redaction: true,
+      normalization: true,
     });
 
     const loaded = await loadConfig({ cwd: project });
@@ -53,6 +54,14 @@ describe("loadConfig", () => {
     expect(loaded.config.redaction).toEqual({
       paths: ["arguments.email", "metadata.authorization"],
       replacement: "[SAFE]",
+    });
+    expect(loaded.config.normalization).toEqual({
+      generic: {
+        callsPath: "events.*.toolCall",
+        namePath: "name",
+        argumentsPath: "arguments",
+        idPath: "id",
+      },
     });
   });
 
@@ -139,6 +148,59 @@ describe("loadConfig", () => {
     });
   });
 
+  it("reports invalid normalization config shape", async () => {
+    const project = await createTempDir();
+    await writeFile(
+      path.join(project, "tool-call-contract.config.mjs"),
+      "export default { contracts: [], normalization: [] };\n",
+    );
+
+    await expect(loadConfig({ cwd: project })).rejects.toMatchObject({
+      code: "config.invalid",
+      message: 'Config field "normalization" must be an object.',
+    });
+  });
+
+  it("reports invalid generic normalization config shape", async () => {
+    const project = await createTempDir();
+    await writeFile(
+      path.join(project, "tool-call-contract.config.mjs"),
+      "export default { contracts: [], normalization: { generic: [] } };\n",
+    );
+
+    await expect(loadConfig({ cwd: project })).rejects.toMatchObject({
+      code: "config.invalid",
+      message: 'Config field "normalization.generic" must be an object.',
+    });
+  });
+
+  it("reports missing generic normalization paths", async () => {
+    const project = await createTempDir();
+    await writeFile(
+      path.join(project, "tool-call-contract.config.mjs"),
+      'export default { contracts: [], normalization: { generic: { callsPath: "events.*.toolCall", namePath: "name" } } };\n',
+    );
+
+    await expect(loadConfig({ cwd: project })).rejects.toMatchObject({
+      code: "config.invalid",
+      message: 'Config field "normalization.generic.argumentsPath" must be a string.',
+    });
+  });
+
+  it("reports invalid generic normalization paths", async () => {
+    const project = await createTempDir();
+    await writeFile(
+      path.join(project, "tool-call-contract.config.mjs"),
+      'export default { contracts: [], normalization: { generic: { callsPath: "events..toolCall", namePath: "name", argumentsPath: "arguments" } } };\n',
+    );
+
+    await expect(loadConfig({ cwd: project })).rejects.toMatchObject({
+      code: "config.invalid",
+      message:
+        'Config field "normalization.generic.callsPath" must be a valid dot path: Path selector "events..toolCall" contains an empty segment at index 1.',
+    });
+  });
+
   it("rejects output directories outside the project root", async () => {
     const project = await createConfigProject("tool-call-contract.config.ts");
 
@@ -197,6 +259,7 @@ async function createConfigProject(
     duplicate?: boolean;
     captures?: boolean;
     redaction?: boolean;
+    normalization?: boolean;
   } = {},
 ): Promise<string> {
   const project = await createTempDir();
@@ -226,6 +289,17 @@ const duplicateSearchDocs = defineToolContract({
     replacement: "[SAFE]"
   }`
     : "";
+  const normalizationEntry = options.normalization
+    ? `,
+  normalization: {
+    generic: {
+      callsPath: "events.*.toolCall",
+      namePath: "name",
+      argumentsPath: "arguments",
+      idPath: "id"
+    }
+  }`
+    : "";
 
   await writeFile(
     path.join(project, configName),
@@ -245,7 +319,7 @@ export default defineConfig({
   contracts: [searchDocs${duplicateEntry}],
   examples: {
     search_docs: [{ query: "config" }]
-  }${capturesEntry}${redactionEntry}
+  }${capturesEntry}${redactionEntry}${normalizationEntry}
 });
 `,
   );

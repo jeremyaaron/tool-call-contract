@@ -25,6 +25,7 @@ export interface ToolCallContractConfig {
   exclude?: readonly string[];
   captures?: CaptureSuiteConfig;
   redaction?: RedactionConfig;
+  normalization?: NormalizationConfig;
 }
 
 export type CaptureSuiteConfig = Record<string, readonly string[]>;
@@ -32,6 +33,17 @@ export type CaptureSuiteConfig = Record<string, readonly string[]>;
 export interface RedactionConfig {
   paths: readonly string[];
   replacement?: string;
+}
+
+export interface NormalizationConfig {
+  generic?: GenericNormalizationConfig;
+}
+
+export interface GenericNormalizationConfig {
+  callsPath: string;
+  namePath: string;
+  argumentsPath: string;
+  idPath?: string;
 }
 
 export function defineToolContract<TSchema extends ZodSchema>(

@@ -6,10 +6,12 @@ import { createJiti } from "jiti";
 
 import type {
   CaptureSuiteConfig,
+  NormalizationConfig,
   RedactionConfig,
   ToolCallContractConfig,
   ToolContract,
 } from "./contracts.js";
+import { parsePathSelector } from "./path-selectors.js";
 
 export const defaultConfigFiles = [
   "tool-call-contract.config.ts",
@@ -123,6 +125,7 @@ function normalizeConfig(value: unknown): ToolCallContractConfig {
   const exclude = optionalStringArray(value.exclude, "exclude");
   const captures = normalizeCaptures(value.captures);
   const redaction = normalizeRedaction(value.redaction);
+  const normalization = normalizeNormalization(value.normalization);
 
   return {
     contracts,
@@ -132,6 +135,7 @@ function normalizeConfig(value: unknown): ToolCallContractConfig {
     ...(exclude ? { exclude } : {}),
     ...(captures ? { captures } : {}),
     ...(redaction ? { redaction } : {}),
+    ...(normalization ? { normalization } : {}),
   };
 }
 
@@ -241,6 +245,75 @@ function normalizeRedaction(value: unknown): RedactionConfig | undefined {
     paths,
     ...(replacement ? { replacement } : {}),
   };
+}
+
+function normalizeNormalization(value: unknown): NormalizationConfig | undefined {
+  if (value === undefined) {
+    return undefined;
+  }
+
+  if (!isRecord(value)) {
+    throw new ConfigLoadError("config.invalid", 'Config field "normalization" must be an object.');
+  }
+
+  const generic = normalizeGenericNormalization(value.generic);
+
+  return {
+    ...(generic ? { generic } : {}),
+  };
+}
+
+function normalizeGenericNormalization(value: unknown): NormalizationConfig["generic"] {
+  if (value === undefined) {
+    return undefined;
+  }
+
+  if (!isRecord(value)) {
+    throw new ConfigLoadError(
+      "config.invalid",
+      'Config field "normalization.generic" must be an object.',
+    );
+  }
+
+  const callsPath = requiredPathSelector(value.callsPath, "normalization.generic.callsPath");
+  const namePath = requiredPathSelector(value.namePath, "normalization.generic.namePath");
+  const argumentsPath = requiredPathSelector(
+    value.argumentsPath,
+    "normalization.generic.argumentsPath",
+  );
+  const idPath =
+    value.idPath === undefined
+      ? undefined
+      : requiredPathSelector(value.idPath, "normalization.generic.idPath");
+
+  return {
+    callsPath,
+    namePath,
+    argumentsPath,
+    ...(idPath ? { idPath } : {}),
+  };
+}
+
+function requiredPathSelector(value: unknown, field: string): string {
+  const path = requiredString(value, field);
+  const parsed = parsePathSelector(path);
+
+  if (!parsed.ok) {
+    throw new ConfigLoadError(
+      "config.invalid",
+      `Config field "${field}" must be a valid dot path: ${parsed.message}`,
+    );
+  }
+
+  return path;
+}
+
+function requiredString(value: unknown, field: string): string {
+  if (typeof value !== "string" || value.trim().length === 0) {
+    throw new ConfigLoadError("config.invalid", `Config field "${field}" must be a string.`);
+  }
+
+  return value;
 }
 
 function optionalString(value: unknown, field: string): string | undefined {

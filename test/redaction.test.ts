@@ -135,6 +135,42 @@ describe("planRedactions", () => {
     expect(plan.entries[0]?.content).toContain('"token": "token-one"');
   });
 
+  it("supports numeric array index segments", () => {
+    const plan = planRedactions({
+      files: [
+        {
+          file: "captures/openai.json",
+          content: JSON.stringify({
+            choices: [
+              {
+                message: {
+                  tool_calls: [
+                    {
+                      function: {
+                        arguments: {
+                          apiKey: "sk-one",
+                        },
+                      },
+                    },
+                  ],
+                },
+              },
+            ],
+          }),
+        },
+      ],
+      paths: ["choices.0.message.tool_calls.0.function.arguments.apiKey"],
+      replacement: "[MASKED]",
+    });
+
+    expect(plan.entries[0]).toMatchObject({
+      changed: true,
+      replacements: 1,
+      issues: [],
+    });
+    expect(plan.entries[0]?.content).toContain('"apiKey": "[MASKED]"');
+  });
+
   it("does not change files that are already redacted and formatted", () => {
     const content = ["{", '  "arguments": {', '    "email": "[REDACTED]"', "  }", "}", ""].join(
       "\n",

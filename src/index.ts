@@ -3,6 +3,8 @@ export {
   defineToolContract,
   type CaptureSuiteConfig,
   type DefineToolContractInput,
+  type GenericNormalizationConfig,
+  type NormalizationConfig,
   type RedactionConfig,
   type ToolCallContractConfig,
   type ToolContract,
