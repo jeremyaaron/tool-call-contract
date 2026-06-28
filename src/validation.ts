@@ -1,6 +1,7 @@
 import type * as z from "zod";
 
 import type { ToolContract, ZodSchema } from "./contracts.js";
+import { normalizeToolCallCaptures, type NormalizationFormat } from "./normalization.js";
 
 export interface NormalizedToolCall {
   name: string;
@@ -9,7 +10,14 @@ export interface NormalizedToolCall {
   source?: ToolCallSource;
 }
 
-export type ToolCallSource = "normalized" | "openai-chat" | "openai-responses" | "unknown";
+export type ToolCallSource =
+  | "normalized"
+  | "openai-chat"
+  | "openai-responses"
+  | "vercel-ai-sdk"
+  | "langchain"
+  | "generic"
+  | "unknown";
 
 export interface ToolCallIssue {
   code: string;
@@ -36,6 +44,11 @@ export type ToolCallValidationResult<T = unknown> =
 interface NormalizeResult {
   calls: NormalizedToolCall[];
   issues: ToolCallIssue[];
+}
+
+interface ValidationNormalizationAttempt {
+  format: NormalizationFormat;
+  input: unknown;
 }
 
 export function validateToolCall<TSchema extends ZodSchema>(
@@ -173,169 +186,174 @@ function validateNormalizedCall<TSchema extends ZodSchema>(
 }
 
 function normalizeToolCallInput(input: unknown): NormalizeResult {
-  const calls: NormalizedToolCall[] = [];
-  const issues: ToolCallIssue[] = [];
-  collectToolCalls(input, calls, issues);
+  const attempts = createValidationNormalizationAttempts(input);
+  let fallbackIssues: ToolCallIssue[] | undefined;
 
-  if (calls.length === 0 && issues.length === 0) {
-    issues.push({
-      code: "call.unsupported-shape",
-      message: "Input could not be normalized into a tool call.",
+  for (const attempt of attempts) {
+    const normalized = normalizeToolCallCaptures(attempt.input, {
+      format: attempt.format,
+      includeSource: true,
+      allowNonObjectArguments: true,
+    } as Parameters<typeof normalizeToolCallCaptures>[1] & {
+      allowNonObjectArguments: true;
     });
+    const issues = mapNormalizationIssuesForValidation(normalized.issues);
+
+    if (normalized.calls.length > 0) {
+      return {
+        calls: normalized.calls,
+        issues,
+      };
+    }
+
+    if (!fallbackIssues || hasSpecificValidationIssues(issues)) {
+      fallbackIssues = issues;
+    }
   }
 
-  return { calls, issues };
+  return {
+    calls: [],
+    issues: fallbackIssues ?? [
+      {
+        code: "call.unsupported-shape",
+        message: "Input could not be normalized into a tool call.",
+      },
+    ],
+  };
 }
 
-function collectToolCalls(
-  input: unknown,
-  calls: NormalizedToolCall[],
-  issues: ToolCallIssue[],
-): void {
-  if (Array.isArray(input)) {
-    for (const item of input) {
-      collectToolCalls(item, calls, issues);
-    }
-    return;
-  }
+function createValidationNormalizationAttempts(input: unknown): ValidationNormalizationAttempt[] {
+  const providerAttempts = createProviderNormalizationAttempts(input);
 
-  if (!isRecord(input)) {
-    issues.push({
-      code: "call.unsupported-shape",
-      message: "Tool call input must be an object or an array of objects.",
+  return [
+    ...providerAttempts,
+    {
+      format: "normalized",
+      input,
+    },
+    ...createWrapperNormalizationAttempts(input),
+    ...createFallbackProviderNormalizationAttempts(providerAttempts, input),
+  ];
+}
+
+function createProviderNormalizationAttempts(input: unknown): ValidationNormalizationAttempt[] {
+  const attempts: ValidationNormalizationAttempt[] = [];
+
+  if (isOpenAIResponsesLike(input)) {
+    attempts.push({
+      format: "openai-responses",
+      input,
     });
-    return;
   }
 
-  const responseCall = normalizeOpenAIResponseCall(input);
-  if (responseCall) {
-    calls.push(responseCall);
-    return;
+  if (isOpenAIChatLike(input)) {
+    attempts.push({
+      format: "openai-chat",
+      input,
+    });
   }
 
-  const directCall = normalizeDirectCall(input);
-  if (directCall) {
-    calls.push(directCall);
-    return;
+  return attempts;
+}
+
+function createFallbackProviderNormalizationAttempts(
+  providerAttempts: readonly ValidationNormalizationAttempt[],
+  input: unknown,
+): ValidationNormalizationAttempt[] {
+  const attemptedFormats = new Set(providerAttempts.map((attempt) => attempt.format));
+  const attempts: ValidationNormalizationAttempt[] = [];
+
+  if (!attemptedFormats.has("openai-responses")) {
+    attempts.push({
+      format: "openai-responses",
+      input,
+    });
   }
 
-  const chatCalls = normalizeOpenAIChatCalls(input);
-  if (chatCalls) {
-    calls.push(...chatCalls);
-    return;
+  if (!attemptedFormats.has("openai-chat")) {
+    attempts.push({
+      format: "openai-chat",
+      input,
+    });
   }
 
-  if (Array.isArray(input.calls)) {
-    collectToolCalls(input.calls, calls, issues);
-    return;
+  return attempts;
+}
+
+function createWrapperNormalizationAttempts(input: unknown): ValidationNormalizationAttempt[] {
+  if (!isRecord(input) || !Array.isArray(input.calls)) {
+    return [];
   }
 
-  if (Array.isArray(input.output)) {
-    collectToolCalls(input.output, calls, issues);
-    return;
+  return [
+    {
+      format: "normalized",
+      input: input.calls,
+    },
+  ];
+}
+
+function isOpenAIResponsesLike(input: unknown): boolean {
+  if (!isRecord(input)) {
+    return false;
   }
 
-  const choices = input.choices;
-  if (Array.isArray(choices)) {
-    for (const choice of choices) {
-      if (isRecord(choice) && isRecord(choice.message)) {
-        collectToolCalls(choice.message, calls, issues);
-      }
+  return input.type === "function_call" || Array.isArray(input.output);
+}
+
+function isOpenAIChatLike(input: unknown): boolean {
+  if (!isRecord(input)) {
+    return false;
+  }
+
+  return Array.isArray(input.tool_calls) || Array.isArray(input.choices);
+}
+
+function mapNormalizationIssuesForValidation(issues: readonly ToolCallIssue[]): ToolCallIssue[] {
+  return issues.map((issue) => {
+    if (issue.code === "normalize.arguments-missing") {
+      return {
+        ...issue,
+        code: "call.arguments-missing",
+        message: "Tool call arguments are missing.",
+      };
     }
-    return;
-  }
 
-  issues.push({
-    code: "call.unsupported-shape",
-    message: "Input could not be normalized into a supported tool call shape.",
+    if (issue.code === "normalize.arguments-invalid-json") {
+      return {
+        ...issue,
+        code: "call.invalid-json",
+        message: "Tool call arguments contain malformed JSON.",
+      };
+    }
+
+    if (isUnsupportedNormalizationIssue(issue)) {
+      return {
+        ...issue,
+        code: "call.unsupported-shape",
+        message: "Input could not be normalized into a supported tool call shape.",
+      };
+    }
+
+    return issue;
   });
 }
 
-function normalizeDirectCall(input: Record<string, unknown>): NormalizedToolCall | null {
-  if (typeof input.name === "string") {
-    if (!hasOwn(input, "arguments")) {
-      return missingArgumentsCall(input.name, input.id, "normalized");
-    }
-
-    return {
-      name: input.name,
-      arguments: input.arguments,
-      id: optionalString(input.id),
-      source: "normalized",
-    };
-  }
-
-  if (typeof input.toolName === "string") {
-    if (!hasOwn(input, "args")) {
-      return missingArgumentsCall(input.toolName, input.id, "normalized");
-    }
-
-    return {
-      name: input.toolName,
-      arguments: input.args,
-      id: optionalString(input.id),
-      source: "normalized",
-    };
-  }
-
-  return null;
+function isUnsupportedNormalizationIssue(issue: ToolCallIssue): boolean {
+  return (
+    issue.code === "normalize.input-unsupported" ||
+    issue.code === "normalize.name-missing" ||
+    issue.code === "normalize.name-not-string" ||
+    issue.code === "normalize.no-tool-calls"
+  );
 }
 
-function normalizeOpenAIChatCalls(input: Record<string, unknown>): NormalizedToolCall[] | null {
-  if (!Array.isArray(input.tool_calls)) {
-    return null;
-  }
-
-  const calls: NormalizedToolCall[] = [];
-
-  for (const rawCall of input.tool_calls) {
-    if (!isRecord(rawCall) || !isRecord(rawCall.function)) {
-      continue;
-    }
-
-    if (typeof rawCall.function.name !== "string") {
-      continue;
-    }
-
-    calls.push({
-      name: rawCall.function.name,
-      arguments: rawCall.function.arguments,
-      id: optionalString(rawCall.id),
-      source: "openai-chat",
-    });
-  }
-
-  return calls;
+function hasSpecificValidationIssues(issues: readonly ToolCallIssue[]): boolean {
+  return issues.some((issue) => issue.code !== "call.unsupported-shape");
 }
 
-function normalizeOpenAIResponseCall(input: Record<string, unknown>): NormalizedToolCall | null {
-  if (input.type !== "function_call" || typeof input.name !== "string") {
-    return null;
-  }
-
-  if (!hasOwn(input, "arguments")) {
-    return missingArgumentsCall(input.name, input.call_id, "openai-responses");
-  }
-
-  return {
-    name: input.name,
-    arguments: input.arguments,
-    id: optionalString(input.call_id),
-    source: "openai-responses",
-  };
-}
-
-function missingArgumentsCall(
-  name: string,
-  id: unknown,
-  source: ToolCallSource,
-): NormalizedToolCall {
-  return {
-    name,
-    arguments: undefined,
-    id: optionalString(id),
-    source,
-  };
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function parseArguments(value: unknown):
@@ -359,29 +377,10 @@ function parseArguments(value: unknown):
     };
   }
 
-  if (typeof value !== "string") {
-    return {
-      ok: true,
-      value,
-    };
-  }
-
-  try {
-    return {
-      ok: true,
-      value: JSON.parse(value),
-    };
-  } catch {
-    return {
-      ok: false,
-      issues: [
-        {
-          code: "call.invalid-json",
-          message: "Tool call arguments contain malformed JSON.",
-        },
-      ],
-    };
-  }
+  return {
+    ok: true,
+    value,
+  };
 }
 
 function mapZodIssue(issue: z.core.$ZodIssue): ToolCallIssue {
@@ -407,16 +406,4 @@ function mapZodIssueCode(issue: z.core.$ZodIssue): string {
   }
 
   return `schema.${issue.code.replaceAll("_", "-")}`;
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-function optionalString(value: unknown): string | undefined {
-  return typeof value === "string" ? value : undefined;
-}
-
-function hasOwn(value: Record<string, unknown>, key: string): boolean {
-  return Object.prototype.hasOwnProperty.call(value, key);
 }

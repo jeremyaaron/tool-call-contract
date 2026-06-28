@@ -1,5 +1,12 @@
 import type { Finding } from "./reporting.js";
 import type { ToolCallIssue } from "./validation.js";
+import {
+  getPathTargetValue,
+  parsePathSelector,
+  selectPathTargets,
+  setPathTargetValue,
+  type ParsedPathSelector,
+} from "./path-selectors.js";
 
 export const defaultRedactionReplacement = "[REDACTED]";
 
@@ -26,23 +33,6 @@ export interface PlanRedactionsOptions {
   paths: readonly string[];
   replacement?: string;
 }
-
-interface ParsedRedactionPath {
-  source: string;
-  segments: string[];
-}
-
-type RedactionTarget =
-  | {
-      kind: "array";
-      parent: unknown[];
-      key: number;
-    }
-  | {
-      kind: "object";
-      parent: Record<string, unknown>;
-      key: string;
-    };
 
 export function planRedactions(options: PlanRedactionsOptions): RedactionPlan {
   const parsedPaths = parseRedactionPaths(options.paths);
@@ -78,7 +68,7 @@ export function redactJsonValue(input: {
 
 function planFileRedaction(
   file: RedactionFileInput,
-  paths: readonly ParsedRedactionPath[],
+  paths: readonly ParsedPathSelector[],
   replacement: string,
 ): RedactionPlanEntry {
   const parsed = parseJson(file.content);
@@ -111,14 +101,14 @@ function planFileRedaction(
 }
 
 function parseRedactionPaths(paths: readonly string[]): {
-  paths: ParsedRedactionPath[];
+  paths: ParsedPathSelector[];
   findings: Finding[];
 } {
-  const parsedPaths: ParsedRedactionPath[] = [];
+  const parsedPaths: ParsedPathSelector[] = [];
   const findings: Finding[] = [];
 
   for (const path of paths) {
-    const parsed = parseRedactionPath(path);
+    const parsed = parsePathSelector(path);
 
     if (!parsed.ok) {
       findings.push({
@@ -131,7 +121,7 @@ function parseRedactionPaths(paths: readonly string[]): {
       continue;
     }
 
-    parsedPaths.push(parsed.path);
+    parsedPaths.push(parsed.selector);
   }
 
   return {
@@ -140,45 +130,16 @@ function parseRedactionPaths(paths: readonly string[]): {
   };
 }
 
-function parseRedactionPath(
-  path: string,
-): { ok: true; path: ParsedRedactionPath } | { ok: false; message: string } {
-  if (path.trim().length === 0) {
-    return {
-      ok: false,
-      message: "Redaction path must be a non-empty dot path.",
-    };
-  }
-
-  const segments = path.split(".");
-  const emptySegmentIndex = segments.findIndex((segment) => segment.length === 0);
-
-  if (emptySegmentIndex !== -1) {
-    return {
-      ok: false,
-      message: `Redaction path "${path}" contains an empty segment at index ${emptySegmentIndex}.`,
-    };
-  }
-
-  return {
-    ok: true,
-    path: {
-      source: path,
-      segments,
-    },
-  };
-}
-
 function applyRedactions(
   value: unknown,
-  paths: readonly ParsedRedactionPath[],
+  paths: readonly ParsedPathSelector[],
   replacement: string,
 ): number {
   let replacements = 0;
 
   visitJson(value, (node) => {
     for (const path of paths) {
-      replacements += redactAtPath(node, path.segments, replacement);
+      replacements += redactAtPath(node, path, replacement);
     }
   });
 
@@ -204,121 +165,19 @@ function visitJson(value: unknown, visitor: (node: Record<string, unknown>) => v
   }
 }
 
-function redactAtPath(
-  value: unknown,
-  segments: readonly string[],
-  replacement: string,
-  index = 0,
-): number {
-  if (index >= segments.length) {
-    return 0;
-  }
-
-  const segment = segments[index];
-  if (!segment) {
-    return 0;
-  }
-
-  if (index === segments.length - 1) {
-    return replaceChild(value, segment, replacement);
-  }
-
+function redactAtPath(value: unknown, path: ParsedPathSelector, replacement: string): number {
   let replacements = 0;
 
-  for (const child of getMatchingChildren(value, segment)) {
-    replacements += redactAtPath(child, segments, replacement, index + 1);
-  }
-
-  return replacements;
-}
-
-function replaceChild(value: unknown, segment: string, replacement: string): number {
-  let replacements = 0;
-
-  for (const target of getMatchingTargets(value, segment)) {
-    if (Object.is(getTargetValue(target), replacement)) {
+  for (const target of selectPathTargets(value, path)) {
+    if (Object.is(getPathTargetValue(target), replacement)) {
       continue;
     }
 
-    setTargetValue(target, replacement);
+    setPathTargetValue(target, replacement);
     replacements += 1;
   }
 
   return replacements;
-}
-
-function getMatchingChildren(value: unknown, segment: string): unknown[] {
-  return getMatchingTargets(value, segment).map(getTargetValue);
-}
-
-function getMatchingTargets(value: unknown, segment: string): RedactionTarget[] {
-  if (Array.isArray(value)) {
-    if (segment === "*") {
-      return value.map((_, index) => ({
-        kind: "array",
-        parent: value,
-        key: index,
-      }));
-    }
-
-    const index = parseArrayIndex(segment);
-    return index !== undefined && index < value.length
-      ? [
-          {
-            kind: "array",
-            parent: value,
-            key: index,
-          },
-        ]
-      : [];
-  }
-
-  if (!isRecord(value)) {
-    return [];
-  }
-
-  if (segment === "*") {
-    return Object.keys(value).map((key) => ({
-      kind: "object",
-      parent: value,
-      key,
-    }));
-  }
-
-  return Object.prototype.hasOwnProperty.call(value, segment)
-    ? [
-        {
-          kind: "object",
-          parent: value,
-          key: segment,
-        },
-      ]
-    : [];
-}
-
-function getTargetValue(target: RedactionTarget): unknown {
-  if (target.kind === "array") {
-    return target.parent[target.key];
-  }
-
-  return target.parent[target.key];
-}
-
-function setTargetValue(target: RedactionTarget, value: unknown): void {
-  if (target.kind === "array") {
-    target.parent[target.key] = value;
-    return;
-  }
-
-  target.parent[target.key] = value;
-}
-
-function parseArrayIndex(segment: string): number | undefined {
-  if (!/^(0|[1-9]\d*)$/.test(segment)) {
-    return undefined;
-  }
-
-  return Number(segment);
 }
 
 function parseJson(content: string): { ok: true; value: unknown } | { ok: false; message: string } {

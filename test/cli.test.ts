@@ -10,7 +10,7 @@ import { parseCliArgs, runCli, runCliCommand } from "../src/cli/app.js";
 
 describe("package scaffold", () => {
   it("exports the package version", () => {
-    expect(version).toBe("0.2.0");
+    expect(version).toBe("0.3.0");
   });
 });
 
@@ -119,6 +119,32 @@ describe("parseCliArgs", () => {
     });
   });
 
+  it("parses normalize options", () => {
+    expect(
+      parseCliArgs([
+        "normalize",
+        "--suite",
+        "raw",
+        "--format",
+        "openai-responses",
+        "--include-source",
+        "--dry-run",
+        "--out-dir",
+        "captures/regression",
+      ]),
+    ).toMatchObject({
+      command: "normalize",
+      options: {
+        suites: ["raw"],
+        format: "openai-responses",
+        includeSource: true,
+        dryRun: true,
+        outDir: "captures/regression",
+      },
+      files: [],
+    });
+  });
+
   it("rejects unknown commands", () => {
     expect(parseCliArgs(["nope"])).toEqual({
       message: 'Unknown command "nope". Run tool-call-contract --help for usage.',
@@ -162,6 +188,32 @@ describe("parseCliArgs", () => {
       message: "generate-tests does not accept file arguments.",
     });
   });
+
+  it("rejects invalid normalize usage", () => {
+    expect(parseCliArgs(["normalize"])).toEqual({
+      message: "normalize requires at least one file or --suite.",
+    });
+    expect(parseCliArgs(["normalize", "raw.json"])).toEqual({
+      message: "normalize requires --format.",
+    });
+    expect(parseCliArgs(["normalize", "raw.json", "--format", "nope"])).toEqual({
+      message: 'Unknown normalization format "nope".',
+    });
+    expect(parseCliArgs(["normalize", "raw.json", "--format", "openai-chat"])).toEqual({
+      message: "normalize writes require --out or --out-dir.",
+    });
+    expect(
+      parseCliArgs(["normalize", "raw.json", "--format", "openai-chat", "--dry-run", "--check"]),
+    ).toEqual({
+      message: "--check and --dry-run cannot be used together.",
+    });
+    expect(parseCliArgs(["normalize", "raw.json", "--format", "openai-chat", "--check"])).toEqual({
+      message: "normalize --check requires --out or --out-dir.",
+    });
+    expect(parseCliArgs(["check", "--include-source"])).toEqual({
+      message: "--format and --include-source can only be used with normalize.",
+    });
+  });
 });
 
 describe("runCliCommand", () => {
@@ -181,7 +233,7 @@ describe("runCliCommand", () => {
     await expect(runCliCommand(["--version"])).resolves.toEqual({
       kind: "output",
       exitCode: 0,
-      text: "0.2.0\n",
+      text: "0.3.0\n",
     });
   });
 
@@ -512,7 +564,7 @@ describe("runCliCommand", () => {
           schemaVersion: 1,
           generator: {
             name: "tool-call-contract",
-            version: "0.2.0",
+            version: "0.3.0",
           },
           generatedAt: null,
           contracts: [],
@@ -1011,6 +1063,495 @@ describe("runCliCommand", () => {
         ],
       },
     });
+  });
+
+  it("normalizes a direct raw capture in dry-run mode", async () => {
+    const project = await createConfigProject();
+    await writeJson(path.join(project, "raw.json"), {
+      output: [
+        {
+          type: "function_call",
+          name: "search_docs",
+          arguments: JSON.stringify({ query: "billing" }),
+        },
+      ],
+    });
+
+    await expect(
+      runCliCommand([
+        "normalize",
+        "--cwd",
+        project,
+        "raw.json",
+        "--format",
+        "openai-responses",
+        "--dry-run",
+      ]),
+    ).resolves.toMatchObject({
+      kind: "success",
+      exitCode: 0,
+      report: {
+        normalization: {
+          format: "openai-responses",
+          dryRun: true,
+          checked: false,
+          files: [
+            {
+              inputPath: "raw.json",
+              callsFound: 1,
+              callsWritten: 1,
+              skipped: 0,
+              changed: true,
+            },
+          ],
+        },
+      },
+    });
+    await expect(fileExists(path.join(project, "raw.normalized.json"))).resolves.toBe(false);
+  });
+
+  it("normalizes configured raw suites in dry-run mode", async () => {
+    const project = await createConfigProject({
+      captures: {
+        raw: ["captures/raw/*.json"],
+      },
+    });
+    await writeJson(path.join(project, "captures/raw/openai.json"), {
+      output: [
+        {
+          type: "function_call",
+          call_id: "call_123",
+          name: "search_docs",
+          arguments: JSON.stringify({ query: "billing" }),
+        },
+      ],
+    });
+
+    await expect(
+      runCliCommand([
+        "normalize",
+        "--cwd",
+        project,
+        "--suite",
+        "raw",
+        "--format",
+        "openai-responses",
+        "--include-source",
+        "--dry-run",
+        "--out-dir",
+        "captures/regression",
+      ]),
+    ).resolves.toMatchObject({
+      kind: "success",
+      exitCode: 0,
+      report: {
+        normalization: {
+          format: "openai-responses",
+          includeSource: true,
+          dryRun: true,
+          files: [
+            {
+              inputPath: "captures/raw/openai.json",
+              outputPath: "captures/regression/openai.json",
+              callsFound: 1,
+              callsWritten: 1,
+              changed: true,
+            },
+          ],
+        },
+      },
+    });
+    await expect(fileExists(path.join(project, "captures/regression/openai.json"))).resolves.toBe(
+      false,
+    );
+  });
+
+  it("reports missing generic normalization config", async () => {
+    const project = await createConfigProject();
+    await writeJson(path.join(project, "raw.json"), {
+      events: [],
+    });
+
+    await expect(
+      runCliCommand([
+        "normalize",
+        "--cwd",
+        project,
+        "raw.json",
+        "--format",
+        "generic",
+        "--dry-run",
+      ]),
+    ).resolves.toMatchObject({
+      kind: "success",
+      exitCode: 1,
+      report: {
+        findings: [
+          {
+            id: "normalize.generic-config-missing",
+            severity: "error",
+          },
+        ],
+      },
+    });
+  });
+
+  it("returns deterministic JSON report metadata for normalize dry-run", async () => {
+    const project = await createConfigProject();
+    await writeJson(path.join(project, "raw.json"), {
+      tool_calls: [
+        {
+          name: "search_docs",
+          args: {
+            query: "billing",
+          },
+        },
+      ],
+    });
+
+    await expect(
+      runCliCommand([
+        "normalize",
+        "--cwd",
+        project,
+        "raw.json",
+        "--format",
+        "langchain",
+        "--dry-run",
+        "--json",
+      ]),
+    ).resolves.toMatchObject({
+      kind: "success",
+      exitCode: 0,
+      json: true,
+      report: {
+        schemaVersion: 1,
+        command: "normalize",
+        normalization: {
+          format: "langchain",
+          includeSource: false,
+          dryRun: true,
+          checked: false,
+          files: [
+            {
+              inputPath: "raw.json",
+              callsFound: 1,
+              callsWritten: 1,
+              skipped: 0,
+            },
+          ],
+        },
+      },
+    });
+  });
+
+  it("writes a normalized output file with --out", async () => {
+    const project = await createConfigProject();
+    await writeJson(path.join(project, "raw.json"), {
+      output: [
+        {
+          type: "function_call",
+          name: "search_docs",
+          arguments: JSON.stringify({ query: "billing" }),
+        },
+      ],
+    });
+
+    await expect(
+      runCliCommand([
+        "normalize",
+        "--cwd",
+        project,
+        "raw.json",
+        "--format",
+        "openai-responses",
+        "--out",
+        "captures/regression/search.json",
+      ]),
+    ).resolves.toMatchObject({
+      kind: "success",
+      exitCode: 0,
+      report: {
+        normalization: {
+          format: "openai-responses",
+          includeSource: false,
+          dryRun: false,
+          checked: false,
+          files: [
+            {
+              inputPath: "raw.json",
+              outputPath: "captures/regression/search.json",
+              callsFound: 1,
+              changed: true,
+              callsWritten: 1,
+              skipped: 0,
+            },
+          ],
+        },
+      },
+    });
+    await expect(
+      readFile(path.join(project, "captures/regression/search.json"), "utf8"),
+    ).resolves.toBe(
+      [
+        "{",
+        '  "arguments": {',
+        '    "query": "billing"',
+        "  },",
+        '  "name": "search_docs"',
+        "}",
+        "",
+      ].join("\n"),
+    );
+  });
+
+  it("writes suite normalization outputs into an output directory", async () => {
+    const project = await createConfigProject({
+      captures: {
+        raw: ["captures/raw/*.json"],
+      },
+    });
+    await writeJson(path.join(project, "captures/raw/openai.json"), {
+      output: [
+        {
+          type: "function_call",
+          name: "search_docs",
+          arguments: JSON.stringify({ query: "billing" }),
+        },
+      ],
+    });
+
+    await expect(
+      runCliCommand([
+        "normalize",
+        "--cwd",
+        project,
+        "--suite",
+        "raw",
+        "--format",
+        "openai-responses",
+        "--out-dir",
+        "captures/regression",
+      ]),
+    ).resolves.toMatchObject({
+      kind: "success",
+      exitCode: 0,
+      report: {
+        normalization: {
+          files: [
+            {
+              inputPath: "captures/raw/openai.json",
+              outputPath: "captures/regression/openai.json",
+              changed: true,
+            },
+          ],
+        },
+      },
+    });
+    await expect(fileExists(path.join(project, "captures/regression/openai.json"))).resolves.toBe(
+      true,
+    );
+  });
+
+  it("reports unchanged normalized output on a second run", async () => {
+    const project = await createConfigProject();
+    await writeJson(path.join(project, "raw.json"), {
+      output: [
+        {
+          type: "function_call",
+          name: "search_docs",
+          arguments: JSON.stringify({ query: "billing" }),
+        },
+      ],
+    });
+
+    await runCliCommand([
+      "normalize",
+      "--cwd",
+      project,
+      "raw.json",
+      "--format",
+      "openai-responses",
+      "--out",
+      "captures/regression/search.json",
+    ]);
+    await expect(
+      runCliCommand([
+        "normalize",
+        "--cwd",
+        project,
+        "raw.json",
+        "--format",
+        "openai-responses",
+        "--out",
+        "captures/regression/search.json",
+      ]),
+    ).resolves.toMatchObject({
+      kind: "success",
+      exitCode: 0,
+      report: {
+        normalization: {
+          files: [
+            {
+              outputPath: "captures/regression/search.json",
+              changed: false,
+            },
+          ],
+        },
+      },
+    });
+  });
+
+  it("passes normalize check when output is current", async () => {
+    const project = await createConfigProject();
+    await writeJson(path.join(project, "raw.json"), {
+      output: [
+        {
+          type: "function_call",
+          name: "search_docs",
+          arguments: JSON.stringify({ query: "billing" }),
+        },
+      ],
+    });
+    await runCliCommand([
+      "normalize",
+      "--cwd",
+      project,
+      "raw.json",
+      "--format",
+      "openai-responses",
+      "--out",
+      "captures/regression/search.json",
+    ]);
+
+    await expect(
+      runCliCommand([
+        "normalize",
+        "--cwd",
+        project,
+        "raw.json",
+        "--format",
+        "openai-responses",
+        "--out",
+        "captures/regression/search.json",
+        "--check",
+      ]),
+    ).resolves.toMatchObject({
+      kind: "success",
+      exitCode: 0,
+      report: {
+        normalization: {
+          format: "openai-responses",
+          includeSource: false,
+          dryRun: false,
+          checked: true,
+          files: [
+            {
+              inputPath: "raw.json",
+              outputPath: "captures/regression/search.json",
+              callsFound: 1,
+              callsWritten: 1,
+              skipped: 0,
+              changed: false,
+            },
+          ],
+        },
+      },
+    });
+  });
+
+  it("fails normalize check when output is missing", async () => {
+    const project = await createConfigProject();
+    await writeJson(path.join(project, "raw.json"), {
+      output: [
+        {
+          type: "function_call",
+          name: "search_docs",
+          arguments: JSON.stringify({ query: "billing" }),
+        },
+      ],
+    });
+
+    await expect(
+      runCliCommand([
+        "normalize",
+        "--cwd",
+        project,
+        "raw.json",
+        "--format",
+        "openai-responses",
+        "--out",
+        "captures/regression/search.json",
+        "--check",
+      ]),
+    ).resolves.toMatchObject({
+      kind: "success",
+      exitCode: 1,
+      report: {
+        findings: [
+          {
+            id: "normalize.output-missing",
+            severity: "error",
+          },
+        ],
+      },
+    });
+  });
+
+  it("fails normalize check when output is stale", async () => {
+    const project = await createConfigProject();
+    await writeJson(path.join(project, "raw.json"), {
+      output: [
+        {
+          type: "function_call",
+          name: "search_docs",
+          arguments: JSON.stringify({ query: "billing" }),
+        },
+      ],
+    });
+    await mkdir(path.join(project, "captures/regression"), { recursive: true });
+    await writeFile(path.join(project, "captures/regression/search.json"), "{}\n");
+
+    await expect(
+      runCliCommand([
+        "normalize",
+        "--cwd",
+        project,
+        "raw.json",
+        "--format",
+        "openai-responses",
+        "--out",
+        "captures/regression/search.json",
+        "--check",
+      ]),
+    ).resolves.toMatchObject({
+      kind: "success",
+      exitCode: 1,
+      report: {
+        findings: [
+          {
+            id: "normalize.output-stale",
+            severity: "error",
+          },
+        ],
+        normalization: {
+          checked: true,
+          files: [
+            {
+              inputPath: "raw.json",
+              outputPath: "captures/regression/search.json",
+              callsFound: 1,
+              callsWritten: 1,
+              skipped: 0,
+              changed: true,
+            },
+          ],
+        },
+      },
+    });
+    await expect(
+      readFile(path.join(project, "captures/regression/search.json"), "utf8"),
+    ).resolves.toBe("{}\n");
   });
 
   it("reports missing redaction config", async () => {
@@ -1651,6 +2192,41 @@ describe("runCli", () => {
     expect(output.stdout).toContain("tool-call-contract redact");
     expect(output.stdout).toContain("Redaction: 1 changed, 0 unchanged.");
     expect(output.stdout).toContain("changed raw.json: 1 replacement(s)");
+    expect(output.stderr).toBe("");
+  });
+
+  it("prints human normalization output", async () => {
+    const project = await createConfigProject();
+    const output = createCliOutput();
+    await writeJson(path.join(project, "raw.json"), {
+      output: [
+        {
+          type: "function_call",
+          name: "search_docs",
+          arguments: JSON.stringify({ query: "human" }),
+        },
+      ],
+    });
+
+    const exitCode = await runCli(
+      [
+        "normalize",
+        "--cwd",
+        project,
+        "raw.json",
+        "--format",
+        "openai-responses",
+        "--out",
+        "captures/regression/search.json",
+      ],
+      output.io,
+    );
+
+    expect(exitCode).toBe(0);
+    expect(output.stdout).toContain("tool-call-contract normalize");
+    expect(output.stdout).toContain("Normalization: openai-responses, 1 changed, 0 unchanged.");
+    expect(output.stdout).toContain("changed raw.json -> captures/regression/search.json");
+    expect(output.stdout).toContain("calls found: 1, written: 1, skipped: 0");
     expect(output.stderr).toBe("");
   });
 });

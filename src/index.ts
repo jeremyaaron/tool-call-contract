@@ -3,6 +3,8 @@ export {
   defineToolContract,
   type CaptureSuiteConfig,
   type DefineToolContractInput,
+  type GenericNormalizationConfig,
+  type NormalizationConfig,
   type RedactionConfig,
   type ToolCallContractConfig,
   type ToolContract,
@@ -17,6 +19,13 @@ export {
   type ToolCallValidationResult,
 } from "./validation.js";
 export {
+  normalizeToolCallCapture,
+  normalizeToolCallCaptures,
+  type NormalizationFormat,
+  type NormalizeToolCallsOptions,
+  type NormalizeToolCallsResult,
+} from "./normalization.js";
+export {
   createCommandReport,
   createValidationReportMetadata,
   hasBlockingFailures,
@@ -27,6 +36,7 @@ export {
   type CommandReport,
   type Finding,
   type GeneratedTestReportMetadata,
+  type NormalizationReportMetadata,
   type ReportSummary,
   type RedactionReportMetadata,
   type Severity,
@@ -82,4 +92,4 @@ export {
   type PlannedArtifactWrite,
 } from "./artifact-writer.js";
 
-export const version = "0.2.0";
+export const version = "0.3.0";

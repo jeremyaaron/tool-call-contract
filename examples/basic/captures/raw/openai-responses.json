@@ -1,0 +1,26 @@
+{
+  "id": "resp_example_001",
+  "output": [
+    {
+      "type": "message",
+      "content": [
+        {
+          "type": "output_text",
+          "text": "I found the billing export details and will create a follow-up issue."
+        }
+      ]
+    },
+    {
+      "type": "function_call",
+      "call_id": "call_search_billing",
+      "name": "search_knowledge_base",
+      "arguments": "{\"query\":\"billing export retention\",\"product\":\"billing\",\"limit\":2}"
+    },
+    {
+      "type": "function_call",
+      "call_id": "call_issue_export",
+      "name": "create_issue",
+      "arguments": "{\"title\":\"Billing export duplicates rows\",\"body\":\"Customer reports duplicate rows after export regeneration.\",\"labels\":[\"billing\",\"bug\"],\"priority\":\"high\"}"
+    }
+  ]
+}

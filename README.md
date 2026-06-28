@@ -5,6 +5,7 @@ Define AI tool contracts once, then validate captured calls and generate reviewa
 `tool-call-contract` is a TypeScript library and CLI for teams building agentic apps with schema-defined tools. A contract gives you one source of truth for:
 
 - runtime call validation with Zod
+- raw provider trace normalization into stable captures
 - generated valid and invalid fixtures
 - OpenAI-compatible tool schema export
 - lightweight Markdown tool docs
@@ -50,6 +51,7 @@ const createIssue = defineToolContract({
 export default defineConfig({
   contracts: [searchKnowledgeBase, createIssue],
   captures: {
+    raw: ["captures/raw/*.json"],
     smoke: ["captures/smoke/*.json"],
     regression: ["captures/regression/*.json"],
   },
@@ -180,6 +182,104 @@ npx tool-call-contract validate --json captures/*.json
 
 JSON validation reports include grouped metadata for suites, files, and contracts while preserving the per-call `results` array.
 
+## Normalize Raw Traces
+
+Most agent frameworks do not emit `tool-call-contract`'s canonical capture shape directly. Use `normalize` to turn raw provider or framework traces into deterministic regression captures:
+
+```sh
+npx tool-call-contract normalize captures/raw/openai.json --format openai-responses --out captures/regression/openai.json
+npx tool-call-contract normalize --suite raw --format openai-responses --out-dir captures/regression
+```
+
+Then validate the normalized suite:
+
+```sh
+npx tool-call-contract validate --suite regression
+```
+
+In CI, use `--check` to fail when committed normalized captures are missing or stale:
+
+```sh
+npx tool-call-contract normalize --suite raw --format openai-responses --out-dir captures/regression --check
+```
+
+Use `--dry-run` while wiring a new capture source:
+
+```sh
+npx tool-call-contract normalize captures/raw/langchain.json --format langchain --dry-run --json
+```
+
+Supported normalization formats:
+
+| Format             | Typical input shape                                         |
+| ------------------ | ----------------------------------------------------------- |
+| `normalized`       | Existing `{ "name": "...", "arguments": { ... } }` captures |
+| `openai-chat`      | Chat Completions `choices[].message.tool_calls[]` traces    |
+| `openai-responses` | Responses API `output[]` items with `type: "function_call"` |
+| `vercel-ai-sdk`    | Vercel AI SDK `toolCalls[]` or `parts[]` tool call records  |
+| `langchain`        | LangChain message objects with `tool_calls[]`               |
+| `generic`          | Custom JSON selected with configured dot paths              |
+
+OpenAI Responses example:
+
+```json
+{
+  "output": [
+    {
+      "type": "function_call",
+      "call_id": "call_search",
+      "name": "search_knowledge_base",
+      "arguments": "{\"query\":\"billing exports\",\"product\":\"billing\"}"
+    }
+  ]
+}
+```
+
+LangChain example:
+
+```json
+{
+  "tool_calls": [
+    {
+      "id": "call_summary",
+      "name": "summarize_thread",
+      "args": {
+        "messages": [{ "role": "user", "content": "The export is late." }],
+        "maxWords": 80
+      }
+    }
+  ]
+}
+```
+
+Generic normalization is useful for simple custom trace envelopes. Configure the paths once:
+
+```ts
+export default defineConfig({
+  contracts: [searchKnowledgeBase],
+  captures: {
+    rawCustom: ["captures/raw/custom/*.json"],
+    regression: ["captures/regression/*.json"],
+  },
+  normalization: {
+    generic: {
+      callsPath: "events.*.toolCall",
+      namePath: "name",
+      argumentsPath: "arguments",
+      idPath: "id",
+    },
+  },
+});
+```
+
+Then run:
+
+```sh
+npx tool-call-contract normalize --suite rawCustom --format generic --out-dir captures/regression
+```
+
+Normalization is not redaction. Normalize first to get a stable contract shape, then run `redact --check` before committing captures that may contain sensitive data.
+
 ## Redact Captures
 
 Captured traces often include customer text, emails, request metadata, or tokens. Configure deterministic redaction paths:
@@ -246,6 +346,8 @@ Useful package scripts:
   "scripts": {
     "tool-contracts:check": "tool-call-contract check",
     "tool-contracts:generate": "tool-call-contract generate",
+    "tool-contracts:normalize": "tool-call-contract normalize --suite raw --format openai-responses --out-dir captures/regression",
+    "tool-contracts:normalize:check": "tool-call-contract normalize --suite raw --format openai-responses --out-dir captures/regression --check",
     "tool-contracts:validate": "tool-call-contract validate --suite regression",
     "tool-contracts:redact": "tool-call-contract redact --check --suite regression",
     "tool-contracts:tests": "tool-call-contract generate-tests --suite regression"
@@ -279,12 +381,15 @@ This repository includes an executable example at [examples/basic](examples/basi
 ```sh
 npx tool-call-contract check --cwd examples/basic
 npx tool-call-contract generate --cwd examples/basic
+npx tool-call-contract normalize --cwd examples/basic --suite raw --format openai-responses --out-dir captures/regression --check
+npx tool-call-contract normalize --cwd examples/basic --suite rawLangchain --format langchain --out-dir captures/regression --check
 npx tool-call-contract validate --cwd examples/basic --suite smoke
 npx tool-call-contract redact --cwd examples/basic --check --suite regression
+npx tool-call-contract validate --cwd examples/basic --suite regression
 npx tool-call-contract generate-tests --cwd examples/basic --suite regression
 ```
 
-The example defines three contracts and includes direct captures, OpenAI-style captures, capture suites, an already-redacted regression capture, and generated-test output.
+The example defines three contracts and includes direct captures, OpenAI-style captures, raw OpenAI Responses and LangChain traces, normalized regression captures, redaction checks, capture suites, and generated-test output.
 
 ## Config Loading Is Trusted Code
 
@@ -304,7 +409,7 @@ This verifies linting, formatting, types, tests, build output, package metadata,
 npm publish --auth-type=web
 ```
 
-After the package exists on npm, tagged releases can use GitHub trusted publishing. See [v0.2 release notes](docs/v0.2.0/release.md).
+After the package exists on npm, tagged releases can use GitHub trusted publishing. See [v0.3 release notes](docs/v0.3.0/release.md).
 
 ## Known Limitations
 
@@ -313,6 +418,8 @@ After the package exists on npm, tagged releases can use GitHub trusted publishi
 - Fixture synthesis intentionally supports a conservative subset of JSON Schema.
 - OpenAI export is the only provider schema output in the MVP.
 - `validate` accepts JSON captures only.
+- `normalize` supports common completed tool-call records, not streaming delta reconstruction.
+- Normalized output is still capture data. Review and redact sensitive content before committing.
 - `redact` is deterministic path replacement, not automatic sensitive-data discovery.
 - Generated tests target Vitest first and intentionally avoid custom matchers.
 - The CLI does not call model APIs and does not execute tool implementations.
@@ -326,3 +433,7 @@ After the package exists on npm, tagged releases can use GitHub trusted publishi
 - [v0.2 technical design](docs/v0.2.0/technical-design.md)
 - [v0.2 implementation plan](docs/v0.2.0/implementation-plan.md)
 - [v0.2 release notes](docs/v0.2.0/release.md)
+- [v0.3 PRD](docs/v0.3.0/prd.md)
+- [v0.3 technical design](docs/v0.3.0/technical-design.md)
+- [v0.3 implementation plan](docs/v0.3.0/implementation-plan.md)
+- [v0.3 release notes](docs/v0.3.0/release.md)

@@ -6,12 +6,12 @@
     <title>tool-call-contract</title>
     <meta
       name="description"
-      content="Define AI tool contracts once, then validate captured calls, redact traces, and generate regression tests."
+      content="Define AI tool contracts once, then normalize raw traces, validate captured calls, redact traces, and generate regression tests."
     />
     <meta property="og:title" content="tool-call-contract" />
     <meta
       property="og:description"
-      content="A TypeScript library and CLI for AI tool-call contracts, capture validation, redaction, regression tests, and generated artifacts."
+      content="A TypeScript library and CLI for AI tool-call contracts, raw trace normalization, capture validation, redaction, regression tests, and generated artifacts."
     />
     <meta property="og:type" content="website" />
     <meta name="theme-color" content="#f7f4ee" />
@@ -38,8 +38,9 @@
           <p class="eyebrow">TypeScript contracts for AI tools</p>
           <h1 id="hero-title">tool-call-contract</h1>
           <p class="hero-copy">
-            Define each tool once with Zod, then validate captured calls, redact sensitive traces,
-            generate regression tests, and keep reviewable artifacts in sync.
+            Define each tool once with Zod, then normalize raw provider traces, validate captured
+            calls, redact sensitive data, generate regression tests, and keep reviewable artifacts
+            in sync.
           </p>
           <div class="hero-actions" aria-label="Primary actions">
             <a class="button primary" href="#install">Install</a>
@@ -59,6 +60,9 @@ No findings.
 
 tool-call-contract generate
 Artifacts: 8 created, 0 updated
+
+tool-call-contract normalize --suite raw --format openai-responses --out-dir captures/regression --check
+Normalization check: openai-responses, 0 changed, 1 unchanged.
 
 tool-call-contract validate --suite regression
 Validation results: 12 valid, 0 invalid.
@@ -86,13 +90,13 @@ All captures already redacted.</code></pre>
           </article>
           <article>
             <span class="step">3</span>
-            <h3>Validate</h3>
-            <p>Check named capture suites from local files, CI traces, or OpenAI responses.</p>
+            <h3>Normalize</h3>
+            <p>Convert OpenAI, Vercel AI SDK, LangChain, or custom traces into stable captures.</p>
           </article>
           <article>
             <span class="step">4</span>
             <h3>Regress</h3>
-            <p>Redact committed captures and generate Vitest tests for repeatable validation.</p>
+            <p>Validate, redact, and generate Vitest tests from committed capture suites.</p>
           </article>
         </div>
       </section>
@@ -108,6 +112,7 @@ All captures already redacted.</code></pre>
           </p>
         </div>
         <div class="artifact-list" aria-label="Generated artifacts">
+          <div><strong>captures</strong><span>normalized calls from raw provider traces</span></div>
           <div><strong>fixtures</strong><span>valid and invalid normalized calls</span></div>
           <div><strong>schemas</strong><span>OpenAI-compatible tool definitions</span></div>
           <div><strong>docs</strong><span>Markdown references from executable contracts</span></div>
@@ -141,6 +146,7 @@ const createIssue = defineToolContract({
 export default defineConfig({
   contracts: [createIssue],
   captures: {
+    raw: ["captures/raw/*.json"],
     regression: ["captures/regression/*.json"],
   },
   redaction: {
@@ -149,6 +155,7 @@ export default defineConfig({
 });</code></pre>
           <pre><code>npx tool-call-contract check
 npx tool-call-contract generate
+npx tool-call-contract normalize --suite raw --format openai-responses --out-dir captures/regression
 npx tool-call-contract validate --suite regression
 npx tool-call-contract redact --check --suite regression
 npx tool-call-contract generate-tests --suite regression</code></pre>

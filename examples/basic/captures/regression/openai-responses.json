@@ -1,0 +1,22 @@
+[
+  {
+    "arguments": {
+      "limit": 2,
+      "product": "billing",
+      "query": "billing export retention"
+    },
+    "name": "search_knowledge_base"
+  },
+  {
+    "arguments": {
+      "body": "Customer reports duplicate rows after export regeneration.",
+      "labels": [
+        "billing",
+        "bug"
+      ],
+      "priority": "high",
+      "title": "Billing export duplicates rows"
+    },
+    "name": "create_issue"
+  }
+]

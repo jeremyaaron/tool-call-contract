@@ -1,0 +1,22 @@
+{
+  "id": "run_langchain_001",
+  "tool_calls": [
+    {
+      "id": "lc_call_summary",
+      "name": "summarize_thread",
+      "args": {
+        "messages": [
+          {
+            "role": "user",
+            "content": "The analytics dashboard is missing yesterday's data."
+          },
+          {
+            "role": "assistant",
+            "content": "I checked the ingestion job and found a delayed warehouse sync."
+          }
+        ],
+        "maxWords": 60
+      }
+    }
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "arguments": {
+    "maxWords": 60,
+    "messages": [
+      {
+        "content": "The analytics dashboard is missing yesterday's data.",
+        "role": "user"
+      },
+      {
+        "content": "I checked the ingestion job and found a delayed warehouse sync.",
+        "role": "assistant"
+      }
+    ]
+  },
+  "name": "summarize_thread"
+}

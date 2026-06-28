@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.3.0
+
+Raw trace normalization release.
+
+- Added public normalization helpers for converting tool-call captures into the canonical capture shape.
+- Added `normalize` with dry-run, write, and check modes.
+- Added normalization support for `normalized`, OpenAI Chat Completions, OpenAI Responses, Vercel AI SDK, LangChain, and configured generic JSON traces.
+- Added normalization report metadata and human-readable normalization summaries.
+- Reused normalization internals from validation while preserving existing validation compatibility.
+- Expanded the example project, README, and site to demonstrate raw-trace-to-regression workflows.
+
 ## 0.2.0
 
 Captured-call regression workflow release.

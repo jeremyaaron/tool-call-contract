@@ -335,6 +335,101 @@ describe("reporters", () => {
     );
   });
 
+  it("renders normalization summaries", () => {
+    const report = createCommandReport({
+      command: "normalize",
+      normalization: {
+        format: "openai-responses",
+        includeSource: true,
+        dryRun: true,
+        checked: false,
+        files: [
+          {
+            inputPath: "captures/raw/openai.json",
+            outputPath: "captures/regression/openai.json",
+            callsFound: 2,
+            callsWritten: 2,
+            skipped: 1,
+            changed: true,
+          },
+          {
+            inputPath: "captures/raw/current.json",
+            outputPath: "captures/regression/current.json",
+            callsFound: 1,
+            callsWritten: 1,
+            skipped: 0,
+            changed: false,
+          },
+        ],
+      },
+    });
+
+    expect(renderHumanReport(report)).toContain(
+      [
+        "Normalization dry run: openai-responses, 1 changed, 1 unchanged.",
+        "  changed captures/raw/openai.json -> captures/regression/openai.json",
+        "    calls found: 2, written: 2, skipped: 1",
+        "  unchanged captures/raw/current.json -> captures/regression/current.json",
+        "    calls found: 1, written: 1, skipped: 0",
+      ].join("\n"),
+    );
+  });
+
+  it("renders normalization metadata in stable JSON", () => {
+    expect(
+      JSON.parse(
+        renderJsonReport(
+          createCommandReport({
+            command: "normalize",
+            normalization: {
+              format: "langchain",
+              includeSource: false,
+              dryRun: false,
+              checked: true,
+              files: [
+                {
+                  inputPath: "captures/raw/langchain.json",
+                  outputPath: "captures/regression/langchain.json",
+                  callsFound: 1,
+                  callsWritten: 1,
+                  skipped: 0,
+                  changed: false,
+                },
+              ],
+            },
+          }),
+        ),
+      ),
+    ).toEqual({
+      schemaVersion: 1,
+      command: "normalize",
+      success: true,
+      summary: {
+        errors: 0,
+        warnings: 0,
+        info: 0,
+        validResults: 0,
+        invalidResults: 0,
+      },
+      normalization: {
+        format: "langchain",
+        includeSource: false,
+        dryRun: false,
+        checked: true,
+        files: [
+          {
+            inputPath: "captures/raw/langchain.json",
+            outputPath: "captures/regression/langchain.json",
+            callsFound: 1,
+            callsWritten: 1,
+            skipped: 0,
+            changed: false,
+          },
+        ],
+      },
+    });
+  });
+
   it("renders stable JSON", () => {
     expect(JSON.parse(renderJsonReport(createCommandReport({ command: "generate" })))).toEqual({
       schemaVersion: 1,

@@ -42,6 +42,8 @@ const summarizeThread = defineToolContract({
 export default defineConfig({
   contracts: [searchKnowledgeBase, createIssue, summarizeThread],
   captures: {
+    raw: ["captures/raw/openai-responses.json"],
+    rawLangchain: ["captures/raw/langchain.json"],
     smoke: ["captures/smoke/*.json"],
     regression: ["captures/regression/*.json"],
   },
