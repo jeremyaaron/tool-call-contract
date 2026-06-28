@@ -69,6 +69,71 @@ describe("basic example project", () => {
 
       await expect(
         runCliCommand([
+          "normalize",
+          "--cwd",
+          exampleProject,
+          "--suite",
+          "raw",
+          "--format",
+          "openai-responses",
+          "--out-dir",
+          "captures/regression",
+          "--check",
+        ]),
+      ).resolves.toMatchObject({
+        kind: "success",
+        exitCode: 0,
+        report: {
+          normalization: {
+            checked: true,
+            files: [
+              {
+                inputPath: "captures/raw/openai-responses.json",
+                outputPath: "captures/regression/openai-responses.json",
+                callsFound: 3,
+                callsWritten: 2,
+                skipped: 1,
+                changed: false,
+              },
+            ],
+          },
+        },
+      });
+
+      await expect(
+        runCliCommand([
+          "normalize",
+          "--cwd",
+          exampleProject,
+          "--suite",
+          "rawLangchain",
+          "--format",
+          "langchain",
+          "--out-dir",
+          "captures/regression",
+          "--check",
+        ]),
+      ).resolves.toMatchObject({
+        kind: "success",
+        exitCode: 0,
+        report: {
+          normalization: {
+            checked: true,
+            files: [
+              {
+                inputPath: "captures/raw/langchain.json",
+                outputPath: "captures/regression/langchain.json",
+                callsFound: 1,
+                callsWritten: 1,
+                changed: false,
+              },
+            ],
+          },
+        },
+      });
+
+      await expect(
+        runCliCommand([
           "validate",
           "--cwd",
           exampleProject,
@@ -94,13 +159,36 @@ describe("basic example project", () => {
         report: {
           redaction: {
             checked: true,
-            files: [
-              {
+            files: expect.arrayContaining([
+              expect.objectContaining({
                 path: "captures/regression/create-issue-redacted.json",
                 changed: false,
                 replacements: 0,
-              },
-            ],
+              }),
+              expect.objectContaining({
+                path: "captures/regression/openai-responses.json",
+                changed: false,
+                replacements: 0,
+              }),
+              expect.objectContaining({
+                path: "captures/regression/langchain.json",
+                changed: false,
+                replacements: 0,
+              }),
+            ]),
+          },
+        },
+      });
+
+      await expect(
+        runCliCommand(["validate", "--cwd", exampleProject, "--suite", "regression"]),
+      ).resolves.toMatchObject({
+        kind: "success",
+        exitCode: 0,
+        report: {
+          summary: {
+            validResults: 4,
+            invalidResults: 0,
           },
         },
       });
@@ -113,7 +201,11 @@ describe("basic example project", () => {
         report: {
           generatedTests: {
             outFile: "test/tool-call-contract.generated.test.ts",
-            captureFiles: ["captures/regression/create-issue-redacted.json"],
+            captureFiles: [
+              "captures/regression/create-issue-redacted.json",
+              "captures/regression/langchain.json",
+              "captures/regression/openai-responses.json",
+            ],
             created: true,
           },
         },

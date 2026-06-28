@@ -194,6 +194,8 @@ function normalizeToolCallInput(input: unknown): NormalizeResult {
       format: attempt.format,
       includeSource: true,
       allowNonObjectArguments: true,
+    } as Parameters<typeof normalizeToolCallCaptures>[1] & {
+      allowNonObjectArguments: true;
     });
     const issues = mapNormalizationIssuesForValidation(normalized.issues);
 

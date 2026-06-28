@@ -74,8 +74,8 @@ export default defineConfig({
 import { z } from "zod";
 import { defineToolContract, validateToolCall, version } from "tool-call-contract";
 
-if (version !== "0.2.0") {
-  throw new Error(\`Expected version 0.2.0, received \${version}\`);
+if (version !== "0.3.0") {
+  throw new Error(\`Expected version 0.3.0, received \${version}\`);
 }
 
 const contract = defineToolContract({

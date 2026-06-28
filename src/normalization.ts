@@ -14,7 +14,6 @@ export interface NormalizeToolCallsOptions {
   format: NormalizationFormat;
   includeSource?: boolean;
   generic?: GenericNormalizationConfig;
-  allowNonObjectArguments?: boolean;
 }
 
 export interface NormalizeToolCallsResult {
@@ -42,6 +41,10 @@ interface ExtractToolCallsResult {
   skipped: number;
 }
 
+type NormalizeToolCallsRuntimeOptions = NormalizeToolCallsOptions & {
+  allowNonObjectArguments?: boolean;
+};
+
 const supportedToolCallSources = new Set<ToolCallSource>([
   "normalized",
   "openai-chat",
@@ -68,13 +71,14 @@ export function normalizeToolCallCaptures(
   input: unknown,
   options: NormalizeToolCallsOptions,
 ): NormalizeToolCallsResult {
-  const extracted = extractToolCalls(input, options);
-  return finalizeExtractedToolCalls(extracted, options);
+  const runtimeOptions = options as NormalizeToolCallsRuntimeOptions;
+  const extracted = extractToolCalls(input, runtimeOptions);
+  return finalizeExtractedToolCalls(extracted, runtimeOptions);
 }
 
 function finalizeExtractedToolCalls(
   extracted: ExtractToolCallsResult,
-  options: NormalizeToolCallsOptions,
+  options: NormalizeToolCallsRuntimeOptions,
 ): NormalizeToolCallsResult {
   const calls: NormalizedToolCall[] = [];
   const issues: ToolCallIssue[] = [...extracted.issues];
@@ -108,7 +112,7 @@ function finalizeExtractedToolCalls(
 
 function extractToolCalls(
   input: unknown,
-  options: NormalizeToolCallsOptions,
+  options: NormalizeToolCallsRuntimeOptions,
 ): ExtractToolCallsResult {
   switch (options.format) {
     case "normalized":
@@ -759,7 +763,7 @@ function createExtractionResult(
 function finalizeToolCall(
   raw: RawToolCall,
   path: Array<string | number>,
-  options: NormalizeToolCallsOptions,
+  options: NormalizeToolCallsRuntimeOptions,
 ): { ok: true; call: NormalizedToolCall } | { ok: false; issues: ToolCallIssue[] } {
   const issues: ToolCallIssue[] = [];
   const name = normalizeName(raw.name, path);
@@ -838,7 +842,7 @@ function normalizeArguments(
   value: unknown,
   hasArguments: boolean,
   path: Array<string | number>,
-  options: NormalizeToolCallsOptions,
+  options: NormalizeToolCallsRuntimeOptions,
 ):
   | {
       ok: true;
