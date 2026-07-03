@@ -1,4 +1,4 @@
-import { readFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 import type { Finding, InitReportMetadata } from "../reporting.js";
@@ -105,6 +105,33 @@ export async function planInitProject(
       })),
     },
   };
+}
+
+export async function writeInitPlan(plan: InitPlan): Promise<Finding[]> {
+  const findings: Finding[] = [];
+
+  for (const file of plan.fileWrites) {
+    if (file.action === "skipped") {
+      continue;
+    }
+
+    try {
+      await mkdir(path.dirname(file.absolutePath), { recursive: true });
+      await writeFile(file.absolutePath, file.content, "utf8");
+    } catch (error) {
+      findings.push(createWriteFailedFinding(file.path, error));
+    }
+  }
+
+  if (plan.packageJson && plan.packageJson.action !== "skipped") {
+    try {
+      await writeFile(plan.packageJson.absolutePath, plan.packageJson.content, "utf8");
+    } catch (error) {
+      findings.push(createWriteFailedFinding(plan.packageJson.path, error));
+    }
+  }
+
+  return findings;
 }
 
 export const planInitProjectTestMarker = Symbol("planInitProjectTestMarker");

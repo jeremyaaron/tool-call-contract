@@ -25,6 +25,7 @@ import type { Finding } from "../reporting.js";
 import { analyzeRegistrySchemas } from "../schema.js";
 import { generateTests } from "./generate-tests.js";
 import { globalHelpText, isHelpTopic, renderCommandHelp } from "./help.js";
+import { planInitProject, writeInitPlan } from "./init.js";
 import { normalizeCaptureFiles } from "./normalize.js";
 import { redactCaptureFiles } from "./redact.js";
 import { validateCaptureFiles } from "./validate.js";
@@ -51,6 +52,7 @@ export interface CliOptions {
   suites: string[];
   format?: NormalizationFormat;
   includeSource: boolean;
+  force: boolean;
 }
 
 export interface ParsedCliCommand {
@@ -87,6 +89,7 @@ const defaultOptions: CliOptions = {
   allowUnknown: false,
   suites: [],
   includeSource: false,
+  force: false,
 };
 
 export async function runCli(args: readonly string[], io: CliIo = consoleIo): Promise<number> {
@@ -327,6 +330,9 @@ export function parseCliArgs(args: readonly string[]): ParsedCliCommand | { mess
       case "--include-source":
         options.includeSource = true;
         break;
+      case "--force":
+        options.force = true;
+        break;
       case "--ignore": {
         const value = readOptionValue(rest, index, arg);
         if ("message" in value) {
@@ -368,6 +374,17 @@ export function parseCliArgs(args: readonly string[]): ParsedCliCommand | { mess
     }
   }
 
+  if (commandToken === "init") {
+    const usage = validateInitUsage(files);
+    if (usage) {
+      return usage;
+    }
+  } else if (options.force) {
+    return {
+      message: "--force can only be used with init.",
+    };
+  }
+
   if (commandToken === "normalize") {
     const usage = validateNormalizeUsage(files, options);
     if (usage) {
@@ -387,6 +404,23 @@ export function parseCliArgs(args: readonly string[]): ParsedCliCommand | { mess
 }
 
 async function createCommandReportForParsedInput(parsed: ParsedCliCommand): Promise<CommandReport> {
+  if (parsed.command === "init") {
+    const plan = await planInitProject({
+      cwd: parsed.options.cwd ?? process.cwd(),
+      dryRun: parsed.options.dryRun,
+      force: parsed.options.force,
+    });
+    const preWriteFindings = applyFindingPolicy(plan.findings, parsed.options);
+    const writeFindings = parsed.options.dryRun ? [] : await writeInitPlan(plan);
+    const findings = applyFindingPolicy([...preWriteFindings, ...writeFindings], parsed.options);
+
+    return createCommandReport({
+      command: parsed.command,
+      findings,
+      init: plan.init,
+    });
+  }
+
   try {
     const loaded = await loadConfig({
       cwd: parsed.options.cwd,
@@ -684,7 +718,8 @@ function isCommandName(value: unknown): value is CommandName {
     value === "validate" ||
     value === "redact" ||
     value === "generate-tests" ||
-    value === "normalize"
+    value === "normalize" ||
+    value === "init"
   );
 }
 
@@ -734,6 +769,16 @@ function validateGenerateTestsUsage(files: readonly string[]): { message: string
   if (files.length > 0) {
     return {
       message: "generate-tests does not accept file arguments.",
+    };
+  }
+
+  return undefined;
+}
+
+function validateInitUsage(files: readonly string[]): { message: string } | undefined {
+  if (files.length > 0) {
+    return {
+      message: "init does not accept file arguments.",
     };
   }
 

@@ -145,6 +145,21 @@ describe("parseCliArgs", () => {
     });
   });
 
+  it("parses init options", () => {
+    expect(
+      parseCliArgs(["init", "--cwd", "fixture", "--dry-run", "--force", "--json"]),
+    ).toMatchObject({
+      command: "init",
+      options: {
+        cwd: "fixture",
+        dryRun: true,
+        force: true,
+        json: true,
+      },
+      files: [],
+    });
+  });
+
   it("rejects unknown commands", () => {
     expect(parseCliArgs(["nope"])).toEqual({
       message: 'Unknown command "nope". Run tool-call-contract --help for usage.',
@@ -214,6 +229,15 @@ describe("parseCliArgs", () => {
       message: "--format and --include-source can only be used with normalize.",
     });
   });
+
+  it("rejects invalid init usage", () => {
+    expect(parseCliArgs(["init", "captures/raw.json"])).toEqual({
+      message: "init does not accept file arguments.",
+    });
+    expect(parseCliArgs(["check", "--force"])).toEqual({
+      message: "--force can only be used with init.",
+    });
+  });
 });
 
 describe("runCliCommand", () => {
@@ -257,7 +281,7 @@ describe("runCliCommand", () => {
     }
   });
 
-  it("returns init command help before init is implemented", async () => {
+  it("returns init command help", async () => {
     await expect(runCliCommand(["help", "init"])).resolves.toMatchObject({
       kind: "output",
       exitCode: 0,
@@ -292,6 +316,207 @@ describe("runCliCommand", () => {
       exitCode: 0,
       text: "0.3.0\n",
     });
+  });
+
+  it("initializes starter files and package scripts", async () => {
+    const project = await createPackageProject();
+
+    const result = await runCliCommand(["init", "--cwd", project]);
+
+    expect(result).toMatchObject({
+      kind: "success",
+      exitCode: 0,
+      report: {
+        command: "init",
+        success: true,
+        init: {
+          files: [
+            {
+              path: "tool-call-contract.config.ts",
+              action: "created",
+            },
+            {
+              path: "captures/raw/openai-responses.json",
+              action: "created",
+            },
+            {
+              path: "captures/regression/openai-responses.json",
+              action: "created",
+            },
+          ],
+          packageScripts: expect.arrayContaining([
+            {
+              name: "tool-contracts:check",
+              action: "created",
+            },
+          ]),
+        },
+      },
+    });
+    await expect(
+      readFile(path.join(project, "tool-call-contract.config.ts"), "utf8"),
+    ).resolves.toContain("search_knowledge_base");
+    await expect(
+      readFile(path.join(project, "captures/raw/openai-responses.json"), "utf8"),
+    ).resolves.toContain("resp_example_001");
+    await expect(readPackageJson(project)).resolves.toMatchObject({
+      scripts: {
+        "tool-contracts:check": "tool-call-contract check",
+      },
+    });
+  });
+
+  it("reports init dry-run changes without writing", async () => {
+    const project = await createPackageProject();
+
+    await expect(runCliCommand(["init", "--cwd", project, "--dry-run"])).resolves.toMatchObject({
+      kind: "success",
+      exitCode: 0,
+      report: {
+        command: "init",
+        init: {
+          dryRun: true,
+          files: expect.arrayContaining([
+            {
+              path: "tool-call-contract.config.ts",
+              action: "created",
+            },
+          ]),
+        },
+      },
+    });
+    await expect(fileExists(path.join(project, "tool-call-contract.config.ts"))).resolves.toBe(
+      false,
+    );
+    await expect(readPackageJson(project)).resolves.not.toHaveProperty("scripts");
+  });
+
+  it("overwrites initializer-owned files and scripts with force", async () => {
+    const project = await createPackageProject({
+      scripts: {
+        "tool-contracts:check": "custom check",
+      },
+    });
+    await writeFile(path.join(project, "tool-call-contract.config.ts"), "custom config\n");
+
+    const result = await runCliCommand(["init", "--cwd", project, "--force"]);
+
+    expect(result).toMatchObject({
+      kind: "success",
+      exitCode: 0,
+      report: {
+        init: {
+          files: expect.arrayContaining([
+            {
+              path: "tool-call-contract.config.ts",
+              action: "updated",
+            },
+          ]),
+          packageScripts: expect.arrayContaining([
+            {
+              name: "tool-contracts:check",
+              action: "updated",
+            },
+          ]),
+        },
+      },
+    });
+    await expect(
+      readFile(path.join(project, "tool-call-contract.config.ts"), "utf8"),
+    ).resolves.toContain("search_knowledge_base");
+    await expect(readPackageJson(project)).resolves.toMatchObject({
+      scripts: {
+        "tool-contracts:check": "tool-call-contract check",
+      },
+    });
+  });
+
+  it("reports skipped init resources on repeated runs", async () => {
+    const project = await createPackageProject();
+
+    await runCliCommand(["init", "--cwd", project]);
+    const result = await runCliCommand(["init", "--cwd", project]);
+
+    expect(result).toMatchObject({
+      kind: "success",
+      exitCode: 0,
+      report: {
+        init: {
+          files: expect.arrayContaining([
+            {
+              path: "tool-call-contract.config.ts",
+              action: "skipped",
+              reason: "file already exists",
+            },
+          ]),
+          packageScripts: expect.arrayContaining([
+            {
+              name: "tool-contracts:check",
+              action: "skipped",
+              reason: "script already exists",
+            },
+          ]),
+        },
+      },
+    });
+  });
+
+  it("reports malformed package.json during init and still writes starter files", async () => {
+    const project = await mkdtemp(path.join(tmpdir(), "tool-call-contract-cli-"));
+    await writeFile(path.join(project, "package.json"), "{not json", "utf8");
+
+    const result = await runCliCommand(["init", "--cwd", project]);
+
+    expect(result).toMatchObject({
+      kind: "success",
+      exitCode: 1,
+      report: {
+        command: "init",
+        success: false,
+        findings: [
+          {
+            id: "init.package-json-invalid",
+            severity: "error",
+          },
+        ],
+      },
+    });
+    await expect(fileExists(path.join(project, "tool-call-contract.config.ts"))).resolves.toBe(
+      true,
+    );
+  });
+
+  it("returns deterministic init JSON output", async () => {
+    const project = await createPackageProject();
+    const output = createCliOutput();
+
+    const exitCode = await runCli(["init", "--cwd", project, "--dry-run", "--json"], output.io);
+
+    expect(exitCode).toBe(0);
+    expect(JSON.parse(output.stdout)).toMatchObject({
+      schemaVersion: 1,
+      command: "init",
+      success: true,
+      init: {
+        dryRun: true,
+        force: false,
+        files: [
+          {
+            path: "tool-call-contract.config.ts",
+            action: "created",
+          },
+          {
+            path: "captures/raw/openai-responses.json",
+            action: "created",
+          },
+          {
+            path: "captures/regression/openai-responses.json",
+            action: "created",
+          },
+        ],
+      },
+    });
+    expect(output.stderr).toBe("");
   });
 
   it("runs check after loading config", async () => {
@@ -2322,6 +2547,23 @@ async function createConfigProject(options: ConfigProjectOptions = {}): Promise<
   const project = await mkdtemp(path.join(tmpdir(), "tool-call-contract-cli-"));
   await writeProjectConfig(project, options);
   return project;
+}
+
+async function createPackageProject(packageJson: Record<string, unknown> = {}): Promise<string> {
+  const project = await mkdtemp(path.join(tmpdir(), "tool-call-contract-cli-"));
+  await writeJson(path.join(project, "package.json"), {
+    name: "agent-app",
+    version: "1.0.0",
+    ...packageJson,
+  });
+  return project;
+}
+
+async function readPackageJson(project: string): Promise<Record<string, unknown>> {
+  return JSON.parse(await readFile(path.join(project, "package.json"), "utf8")) as Record<
+    string,
+    unknown
+  >;
 }
 
 async function writeProjectConfig(
