@@ -36,6 +36,7 @@ export {
   type CommandReport,
   type Finding,
   type GeneratedTestReportMetadata,
+  type InitReportMetadata,
   type NormalizationReportMetadata,
   type ReportSummary,
   type RedactionReportMetadata,
@@ -92,4 +93,4 @@ export {
   type PlannedArtifactWrite,
 } from "./artifact-writer.js";
 
-export const version = "0.3.0";
+export const version = "0.4.0";

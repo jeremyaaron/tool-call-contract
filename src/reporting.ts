@@ -22,7 +22,8 @@ export type CommandName =
   | "validate"
   | "redact"
   | "generate-tests"
-  | "normalize";
+  | "normalize"
+  | "init";
 
 export interface ReportSummary {
   errors: number;
@@ -43,12 +44,28 @@ export interface CommandReport {
   redaction?: RedactionReportMetadata;
   generatedTests?: GeneratedTestReportMetadata;
   normalization?: NormalizationReportMetadata;
+  init?: InitReportMetadata;
   artifacts?: {
     created: string[];
     updated: string[];
     unchanged: string[];
     deleted: string[];
   };
+}
+
+export interface InitReportMetadata {
+  dryRun: boolean;
+  force: boolean;
+  files: Array<{
+    path: string;
+    action: "created" | "updated" | "skipped";
+    reason?: string;
+  }>;
+  packageScripts: Array<{
+    name: string;
+    action: "created" | "updated" | "skipped";
+    reason?: string;
+  }>;
 }
 
 export interface ValidationReportMetadata {
@@ -116,6 +133,7 @@ export function createCommandReport(input: {
   redaction?: RedactionReportMetadata;
   generatedTests?: GeneratedTestReportMetadata;
   normalization?: NormalizationReportMetadata;
+  init?: InitReportMetadata;
   artifacts?: CommandReport["artifacts"];
 }): CommandReport {
   const findings = [...(input.findings ?? [])];
@@ -134,6 +152,7 @@ export function createCommandReport(input: {
     ...(input.redaction ? { redaction: input.redaction } : {}),
     ...(input.generatedTests ? { generatedTests: input.generatedTests } : {}),
     ...(input.normalization ? { normalization: input.normalization } : {}),
+    ...(input.init ? { init: input.init } : {}),
     ...(input.artifacts ? { artifacts: input.artifacts } : {}),
   };
 }
@@ -194,6 +213,7 @@ export function renderHumanReport(report: CommandReport): string {
   const redaction = report.redaction;
   const generatedTests = report.generatedTests;
   const normalization = report.normalization;
+  const init = report.init;
   const artifacts = report.artifacts;
 
   if (
@@ -203,6 +223,7 @@ export function renderHumanReport(report: CommandReport): string {
     !redaction &&
     !generatedTests &&
     !normalization &&
+    !init &&
     !artifacts
   ) {
     lines.push("No findings.");
@@ -291,7 +312,61 @@ export function renderHumanReport(report: CommandReport): string {
     pushNormalizationMetadata(lines, normalization);
   }
 
+  if (init) {
+    pushInitMetadata(lines, init);
+  }
+
   return `${lines.join("\n")}\n`;
+}
+
+function pushInitMetadata(lines: string[], init: InitReportMetadata): void {
+  const files = countInitActions(init.files);
+  const scripts = countInitActions(init.packageScripts);
+  const prefix = init.dryRun ? "Init dry run" : "Init";
+  const createdLabel = init.dryRun ? "would create" : "created";
+  const updatedLabel = init.dryRun ? "would update" : "updated";
+
+  lines.push(
+    `${prefix}: ${files.created} ${createdLabel}, ${files.updated} ${updatedLabel}, ${files.skipped} skipped.`,
+  );
+
+  for (const file of init.files) {
+    const reason = file.reason ? ` (${file.reason})` : "";
+    lines.push(`  ${file.action} ${file.path}${reason}`);
+  }
+
+  lines.push(
+    `Package scripts: ${scripts.created} ${createdLabel}, ${scripts.updated} ${updatedLabel}, ${scripts.skipped} skipped.`,
+  );
+
+  for (const script of init.packageScripts) {
+    const reason = script.reason ? ` (${script.reason})` : "";
+    lines.push(`  ${script.action} ${script.name}${reason}`);
+  }
+
+  lines.push("");
+  lines.push("Next steps:");
+  if (init.dryRun) {
+    lines.push("  Run tool-call-contract init to write these changes.");
+    return;
+  }
+
+  lines.push("  Run npm run tool-contracts:normalize:check");
+  lines.push("  Run npm run tool-contracts:redact");
+  lines.push("  Run npm run tool-contracts:validate");
+  lines.push("  Run npm run tool-contracts:tests -- --dry-run");
+}
+
+function countInitActions(entries: ReadonlyArray<{ action: "created" | "updated" | "skipped" }>): {
+  created: number;
+  updated: number;
+  skipped: number;
+} {
+  return {
+    created: entries.filter((entry) => entry.action === "created").length,
+    updated: entries.filter((entry) => entry.action === "updated").length,
+    skipped: entries.filter((entry) => entry.action === "skipped").length,
+  };
 }
 
 export function renderJsonReport(report: CommandReport): string {

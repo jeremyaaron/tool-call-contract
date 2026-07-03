@@ -7,10 +7,11 @@ import { describe, expect, it } from "vitest";
 
 import { version } from "../src/index.js";
 import { parseCliArgs, runCli, runCliCommand } from "../src/cli/app.js";
+import { commandHelpEntries } from "../src/cli/help.js";
 
 describe("package scaffold", () => {
   it("exports the package version", () => {
-    expect(version).toBe("0.3.0");
+    expect(version).toBe("0.4.0");
   });
 });
 
@@ -145,6 +146,21 @@ describe("parseCliArgs", () => {
     });
   });
 
+  it("parses init options", () => {
+    expect(
+      parseCliArgs(["init", "--cwd", "fixture", "--dry-run", "--force", "--json"]),
+    ).toMatchObject({
+      command: "init",
+      options: {
+        cwd: "fixture",
+        dryRun: true,
+        force: true,
+        json: true,
+      },
+      files: [],
+    });
+  });
+
   it("rejects unknown commands", () => {
     expect(parseCliArgs(["nope"])).toEqual({
       message: 'Unknown command "nope". Run tool-call-contract --help for usage.',
@@ -214,6 +230,15 @@ describe("parseCliArgs", () => {
       message: "--format and --include-source can only be used with normalize.",
     });
   });
+
+  it("rejects invalid init usage", () => {
+    expect(parseCliArgs(["init", "captures/raw.json"])).toEqual({
+      message: "init does not accept file arguments.",
+    });
+    expect(parseCliArgs(["check", "--force"])).toEqual({
+      message: "--force can only be used with init.",
+    });
+  });
 });
 
 describe("runCliCommand", () => {
@@ -226,15 +251,432 @@ describe("runCliCommand", () => {
     });
     if (result.kind === "output") {
       expect(result.text).toContain("tool-call-contract <command>");
+      expect(result.text).toContain("init");
+      expect(result.text).toContain("tool-call-contract help <command>");
     }
+  });
+
+  it("returns global help with the help command", async () => {
+    await expect(runCliCommand(["help"])).resolves.toMatchObject({
+      kind: "output",
+      exitCode: 0,
+      text: expect.stringContaining("tool-call-contract help <command>"),
+    });
+  });
+
+  it("returns command help from help topics and command help flags", async () => {
+    const topicHelp = await runCliCommand(["help", "normalize"]);
+    const flagHelp = await runCliCommand(["normalize", "--help"]);
+
+    expect(topicHelp).toEqual(flagHelp);
+    expect(topicHelp).toMatchObject({
+      kind: "output",
+      exitCode: 0,
+      text: expect.stringContaining("--out-dir <path>"),
+    });
+    if (topicHelp.kind === "output") {
+      expect(topicHelp.text).toContain("--check");
+      expect(topicHelp.text).toContain("--dry-run");
+      expect(topicHelp.text).toContain("--include-source");
+      expect(topicHelp.text).toContain("openai-responses");
+    }
+  });
+
+  it("keeps command help examples aligned with parser behavior", () => {
+    for (const help of commandHelpEntries) {
+      for (const example of help.examples) {
+        const parsed = parseCliArgs(stripBinaryFromExample(example));
+
+        expect(parsed).not.toHaveProperty("message");
+        expect(parsed).toMatchObject({
+          command: help.command,
+        });
+      }
+    }
+  });
+
+  it("returns init command help", async () => {
+    await expect(runCliCommand(["help", "init"])).resolves.toMatchObject({
+      kind: "output",
+      exitCode: 0,
+      text: expect.stringContaining("--force"),
+    });
+  });
+
+  it("returns usage errors for unknown help topics", async () => {
+    await expect(runCliCommand(["help", "nope"])).resolves.toEqual({
+      kind: "usage",
+      exitCode: 2,
+      message: 'Unknown help topic "nope". Run tool-call-contract --help for commands.',
+    });
+    await expect(runCliCommand(["nope", "--help"])).resolves.toEqual({
+      kind: "usage",
+      exitCode: 2,
+      message: 'Unknown help topic "nope". Run tool-call-contract --help for commands.',
+    });
+  });
+
+  it("returns command help without loading config", async () => {
+    await expect(runCliCommand(["normalize", "--help", "--cwd", tmpdir()])).resolves.toMatchObject({
+      kind: "output",
+      exitCode: 0,
+      text: expect.stringContaining("tool-call-contract normalize"),
+    });
   });
 
   it("returns version output", async () => {
     await expect(runCliCommand(["--version"])).resolves.toEqual({
       kind: "output",
       exitCode: 0,
-      text: "0.3.0\n",
+      text: "0.4.0\n",
     });
+  });
+
+  it("initializes starter files and package scripts", async () => {
+    const project = await createPackageProject();
+
+    const result = await runCliCommand(["init", "--cwd", project]);
+
+    expect(result).toMatchObject({
+      kind: "success",
+      exitCode: 0,
+      report: {
+        command: "init",
+        success: true,
+        init: {
+          files: [
+            {
+              path: "tool-call-contract.config.ts",
+              action: "created",
+            },
+            {
+              path: "captures/raw/openai-responses.json",
+              action: "created",
+            },
+            {
+              path: "captures/regression/openai-responses.json",
+              action: "created",
+            },
+          ],
+          packageScripts: expect.arrayContaining([
+            {
+              name: "tool-contracts:check",
+              action: "created",
+            },
+          ]),
+        },
+      },
+    });
+    await expect(
+      readFile(path.join(project, "tool-call-contract.config.ts"), "utf8"),
+    ).resolves.toContain("search_knowledge_base");
+    await expect(
+      readFile(path.join(project, "captures/raw/openai-responses.json"), "utf8"),
+    ).resolves.toContain("resp_example_001");
+    await expect(readPackageJson(project)).resolves.toMatchObject({
+      scripts: {
+        "tool-contracts:check": "tool-call-contract check",
+      },
+    });
+  });
+
+  it("reports init dry-run changes without writing", async () => {
+    const project = await createPackageProject();
+
+    await expect(runCliCommand(["init", "--cwd", project, "--dry-run"])).resolves.toMatchObject({
+      kind: "success",
+      exitCode: 0,
+      report: {
+        command: "init",
+        init: {
+          dryRun: true,
+          files: expect.arrayContaining([
+            {
+              path: "tool-call-contract.config.ts",
+              action: "created",
+            },
+          ]),
+        },
+      },
+    });
+    await expect(fileExists(path.join(project, "tool-call-contract.config.ts"))).resolves.toBe(
+      false,
+    );
+    await expect(readPackageJson(project)).resolves.not.toHaveProperty("scripts");
+  });
+
+  it("overwrites initializer-owned files and scripts with force", async () => {
+    const project = await createPackageProject({
+      scripts: {
+        "tool-contracts:check": "custom check",
+      },
+    });
+    await writeFile(path.join(project, "tool-call-contract.config.ts"), "custom config\n");
+
+    const result = await runCliCommand(["init", "--cwd", project, "--force"]);
+
+    expect(result).toMatchObject({
+      kind: "success",
+      exitCode: 0,
+      report: {
+        init: {
+          files: expect.arrayContaining([
+            {
+              path: "tool-call-contract.config.ts",
+              action: "updated",
+            },
+          ]),
+          packageScripts: expect.arrayContaining([
+            {
+              name: "tool-contracts:check",
+              action: "updated",
+            },
+          ]),
+        },
+      },
+    });
+    await expect(
+      readFile(path.join(project, "tool-call-contract.config.ts"), "utf8"),
+    ).resolves.toContain("search_knowledge_base");
+    await expect(readPackageJson(project)).resolves.toMatchObject({
+      scripts: {
+        "tool-contracts:check": "tool-call-contract check",
+      },
+    });
+  });
+
+  it("reports skipped init resources on repeated runs", async () => {
+    const project = await createPackageProject();
+
+    await runCliCommand(["init", "--cwd", project]);
+    const result = await runCliCommand(["init", "--cwd", project]);
+
+    expect(result).toMatchObject({
+      kind: "success",
+      exitCode: 0,
+      report: {
+        init: {
+          files: expect.arrayContaining([
+            {
+              path: "tool-call-contract.config.ts",
+              action: "skipped",
+              reason: "file already exists",
+            },
+          ]),
+          packageScripts: expect.arrayContaining([
+            {
+              name: "tool-contracts:check",
+              action: "skipped",
+              reason: "script already exists",
+            },
+          ]),
+        },
+      },
+    });
+  });
+
+  it("reports malformed package.json during init and still writes starter files", async () => {
+    const project = await mkdtemp(path.join(tmpdir(), "tool-call-contract-cli-"));
+    await writeFile(path.join(project, "package.json"), "{not json", "utf8");
+
+    const result = await runCliCommand(["init", "--cwd", project]);
+
+    expect(result).toMatchObject({
+      kind: "success",
+      exitCode: 1,
+      report: {
+        command: "init",
+        success: false,
+        findings: [
+          {
+            id: "init.package-json-invalid",
+            severity: "error",
+          },
+        ],
+      },
+    });
+    await expect(fileExists(path.join(project, "tool-call-contract.config.ts"))).resolves.toBe(
+      true,
+    );
+  });
+
+  it("returns deterministic init JSON output", async () => {
+    const project = await createPackageProject();
+    const output = createCliOutput();
+
+    const exitCode = await runCli(["init", "--cwd", project, "--dry-run", "--json"], output.io);
+
+    expect(exitCode).toBe(0);
+    expect(JSON.parse(output.stdout)).toMatchObject({
+      schemaVersion: 1,
+      command: "init",
+      success: true,
+      init: {
+        dryRun: true,
+        force: false,
+        files: [
+          {
+            path: "tool-call-contract.config.ts",
+            action: "created",
+          },
+          {
+            path: "captures/raw/openai-responses.json",
+            action: "created",
+          },
+          {
+            path: "captures/regression/openai-responses.json",
+            action: "created",
+          },
+        ],
+      },
+    });
+    expect(output.stderr).toBe("");
+  });
+
+  it("runs the generated starter setup through the regression workflow", async () => {
+    const project = await createPackageProject();
+
+    await runCliCommand(["init", "--cwd", project]);
+    await installGeneratedConfigTestPackages(project);
+
+    await expect(runCliCommand(["check", "--cwd", project])).resolves.toMatchObject({
+      kind: "success",
+      exitCode: 0,
+      report: {
+        command: "check",
+        success: true,
+      },
+    });
+    await expect(
+      runCliCommand([
+        "normalize",
+        "--cwd",
+        project,
+        "--suite",
+        "raw",
+        "--format",
+        "openai-responses",
+        "--out-dir",
+        "captures/regression",
+        "--check",
+      ]),
+    ).resolves.toMatchObject({
+      kind: "success",
+      exitCode: 0,
+      report: {
+        command: "normalize",
+        success: true,
+      },
+    });
+    await expect(
+      runCliCommand(["redact", "--cwd", project, "--check", "--suite", "regression"]),
+    ).resolves.toMatchObject({
+      kind: "success",
+      exitCode: 0,
+      report: {
+        command: "redact",
+        success: true,
+      },
+    });
+    await expect(
+      runCliCommand(["validate", "--cwd", project, "--suite", "regression"]),
+    ).resolves.toMatchObject({
+      kind: "success",
+      exitCode: 0,
+      report: {
+        command: "validate",
+        success: true,
+        summary: {
+          validResults: 1,
+          invalidResults: 0,
+        },
+      },
+    });
+    await expect(
+      runCliCommand(["generate-tests", "--cwd", project, "--suite", "regression", "--dry-run"]),
+    ).resolves.toMatchObject({
+      kind: "success",
+      exitCode: 0,
+      report: {
+        command: "generate-tests",
+        success: true,
+        generatedTests: {
+          dryRun: true,
+          captureFiles: ["captures/regression/openai-responses.json"],
+        },
+      },
+    });
+  });
+
+  it("returns consistent JSON reports across the generated starter workflow", async () => {
+    const project = await createPackageProject();
+
+    const initReport = await runJsonCommand(["init", "--cwd", project, "--json"]);
+    await installGeneratedConfigTestPackages(project);
+
+    const reports = [
+      initReport,
+      await runJsonCommand(["check", "--cwd", project, "--json"]),
+      await runJsonCommand([
+        "normalize",
+        "--cwd",
+        project,
+        "--suite",
+        "raw",
+        "--format",
+        "openai-responses",
+        "--out-dir",
+        "captures/regression",
+        "--check",
+        "--json",
+      ]),
+      await runJsonCommand([
+        "redact",
+        "--cwd",
+        project,
+        "--check",
+        "--suite",
+        "regression",
+        "--json",
+      ]),
+      await runJsonCommand(["validate", "--cwd", project, "--suite", "regression", "--json"]),
+      await runJsonCommand([
+        "generate-tests",
+        "--cwd",
+        project,
+        "--suite",
+        "regression",
+        "--dry-run",
+        "--json",
+      ]),
+    ];
+
+    expect(reports.map((report) => report.command)).toEqual([
+      "init",
+      "check",
+      "normalize",
+      "redact",
+      "validate",
+      "generate-tests",
+    ]);
+
+    for (const report of reports) {
+      expect(report).toMatchObject({
+        schemaVersion: 1,
+        success: true,
+        summary: {
+          errors: 0,
+          warnings: 0,
+          info: 0,
+        },
+      });
+    }
+
+    expect(reports[0]).toHaveProperty("init");
+    expect(reports[2]).toHaveProperty("normalization.checked", true);
+    expect(reports[3]).toHaveProperty("redaction.checked", true);
+    expect(reports[4]).toHaveProperty("validation.suites.0.name", "regression");
+    expect(reports[5]).toHaveProperty("generatedTests.dryRun", true);
   });
 
   it("runs check after loading config", async () => {
@@ -564,7 +1006,7 @@ describe("runCliCommand", () => {
           schemaVersion: 1,
           generator: {
             name: "tool-call-contract",
-            version: "0.3.0",
+            version: "0.4.0",
           },
           generatedAt: null,
           contracts: [],
@@ -2248,6 +2690,26 @@ function createCliOutput() {
   return output;
 }
 
+function stripBinaryFromExample(example: string): string[] {
+  const parts = example.trim().split(/\s+/);
+
+  if (parts[0] !== "tool-call-contract") {
+    throw new Error(`Unexpected help example binary: ${example}`);
+  }
+
+  return parts.slice(1);
+}
+
+async function runJsonCommand(args: string[]): Promise<Record<string, unknown>> {
+  const output = createCliOutput();
+  const exitCode = await runCli(args, output.io);
+
+  expect(exitCode).toBe(0);
+  expect(output.stderr).toBe("");
+
+  return JSON.parse(output.stdout) as Record<string, unknown>;
+}
+
 interface ConfigProjectOptions {
   invalidName?: boolean;
   missingDescription?: boolean;
@@ -2265,6 +2727,61 @@ async function createConfigProject(options: ConfigProjectOptions = {}): Promise<
   const project = await mkdtemp(path.join(tmpdir(), "tool-call-contract-cli-"));
   await writeProjectConfig(project, options);
   return project;
+}
+
+async function createPackageProject(packageJson: Record<string, unknown> = {}): Promise<string> {
+  const project = await mkdtemp(path.join(tmpdir(), "tool-call-contract-cli-"));
+  await writeJson(path.join(project, "package.json"), {
+    name: "agent-app",
+    version: "1.0.0",
+    ...packageJson,
+  });
+  return project;
+}
+
+async function readPackageJson(project: string): Promise<Record<string, unknown>> {
+  return JSON.parse(await readFile(path.join(project, "package.json"), "utf8")) as Record<
+    string,
+    unknown
+  >;
+}
+
+async function installGeneratedConfigTestPackages(project: string): Promise<void> {
+  const nodeModules = path.join(project, "node_modules");
+  await mkdir(nodeModules, { recursive: true });
+  await writeShimPackage({
+    packageDir: path.join(nodeModules, "tool-call-contract"),
+    packageName: "tool-call-contract",
+    entryFile: "index.ts",
+    targetUrl: pathToFileURL(path.resolve("src/index.ts")).href,
+  });
+  await writeShimPackage({
+    packageDir: path.join(nodeModules, "zod"),
+    packageName: "zod",
+    entryFile: "index.js",
+    targetUrl: pathToFileURL(path.resolve("node_modules/zod/index.js")).href,
+  });
+}
+
+async function writeShimPackage(input: {
+  packageDir: string;
+  packageName: string;
+  entryFile: string;
+  targetUrl: string;
+}): Promise<void> {
+  await mkdir(input.packageDir, { recursive: true });
+  await writeJson(path.join(input.packageDir, "package.json"), {
+    name: input.packageName,
+    type: "module",
+    exports: {
+      ".": `./${input.entryFile}`,
+    },
+  });
+  await writeFile(
+    path.join(input.packageDir, input.entryFile),
+    `export * from ${JSON.stringify(input.targetUrl)};\n`,
+    "utf8",
+  );
 }
 
 async function writeProjectConfig(

@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.4.0
+
+Adoption and operability release.
+
+- Added `init` to bootstrap a starter config, sample raw trace, normalized regression fixture, and package scripts.
+- Added command-specific help with real usage, options, examples, and notes.
+- Refined docs terminology around raw traces, normalized captures, and reviewed regression fixtures.
+- Added agent guidance and provider/framework cookbooks for OpenAI Responses, Vercel AI SDK, and LangChain.
+- Expanded smoke coverage for the bootstrap-to-regression workflow and command JSON reports.
+- Upgraded release verification to exercise `pkg-guard`'s experimental diagnostics API while keeping the stable `pkg-guard check` gate.
+
 ## 0.3.0
 
 Raw trace normalization release.

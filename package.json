@@ -1,6 +1,6 @@
 {
   "name": "tool-call-contract",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "Define AI tool contracts once, then validate calls and generate test artifacts.",
   "license": "MIT",
   "repository": {
@@ -34,10 +34,11 @@
     "lint": "eslint .",
     "pack:check": "pkg-guard check && npm pack --dry-run --ignore-scripts",
     "prepublishOnly": "npm run verify:release",
+    "pkg-guard:diagnostics": "node scripts/check-package-diagnostics.mjs",
     "smoke:package": "node scripts/smoke-packed-package.mjs",
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
-    "verify:release": "npm run lint && npm run format && npm run typecheck && npm test && npm run build && npm run pack:check && npm run smoke:package"
+    "verify:release": "npm run lint && npm run format && npm run typecheck && npm test && npm run build && npm run pkg-guard:diagnostics && npm run pack:check && npm run smoke:package"
   },
   "pkgGuard": {
     "ignore": [
@@ -66,7 +67,7 @@
     "@eslint/js": "^9.0.0",
     "@types/node": "^20.0.0",
     "eslint": "^9.0.0",
-    "pkg-guard": "^0.3.0",
+    "pkg-guard": "^0.5.0",
     "prettier": "^3.0.0",
     "tsup": "^8.0.0",
     "typescript": "^5.5.0",

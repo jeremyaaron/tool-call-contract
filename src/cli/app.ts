@@ -24,35 +24,13 @@ import { createContractRegistry } from "../registry.js";
 import type { Finding } from "../reporting.js";
 import { analyzeRegistrySchemas } from "../schema.js";
 import { generateTests } from "./generate-tests.js";
+import { globalHelpText, isHelpTopic, renderCommandHelp } from "./help.js";
+import { planInitProject, writeInitPlan } from "./init.js";
 import { normalizeCaptureFiles } from "./normalize.js";
 import { redactCaptureFiles } from "./redact.js";
 import { validateCaptureFiles } from "./validate.js";
 
-export const cliHelpText = `tool-call-contract
-
-Define AI tool contracts once, then validate calls and generate test artifacts.
-
-Usage:
-  tool-call-contract <command> [options]
-
-Commands:
-  check                 Validate configured tool contracts
-  generate              Generate fixtures, schemas, docs, and manifest
-  validate <files...>   Validate captured tool-call JSON files
-  redact <files...>     Redact captured tool-call JSON files
-  normalize <files...>  Normalize raw tool-call traces into capture JSON
-  generate-tests        Generate Vitest regression tests for captures
-
-Options:
-  -h, --help            Show help
-  -v, --version         Show version
-      --cwd <path>      Run from a different working directory
-      --config <path>   Load a specific config file
-      --json            Print JSON output
-      --suite <name>    Include a configured capture suite
-      --format <name>   Input format for normalize
-      --include-source  Include stable source/id metadata when normalizing
-`;
+export const cliHelpText = globalHelpText;
 
 export interface CliIo {
   stdout: (text: string) => void;
@@ -74,6 +52,7 @@ export interface CliOptions {
   suites: string[];
   format?: NormalizationFormat;
   includeSource: boolean;
+  force: boolean;
 }
 
 export interface ParsedCliCommand {
@@ -110,6 +89,7 @@ const defaultOptions: CliOptions = {
   allowUnknown: false,
   suites: [],
   includeSource: false,
+  force: false,
 };
 
 export async function runCli(args: readonly string[], io: CliIo = consoleIo): Promise<number> {
@@ -140,16 +120,13 @@ export async function runCliCommand(args: readonly string[]): Promise<CliRunResu
     return {
       kind: "output",
       exitCode: 0,
-      text: "0.3.0\n",
+      text: "0.4.0\n",
     };
   }
 
-  if (args.length === 0 || args.includes("--help") || args.includes("-h")) {
-    return {
-      kind: "output",
-      exitCode: 0,
-      text: cliHelpText,
-    };
+  const help = resolveHelpRequest(args);
+  if (help) {
+    return help;
   }
 
   const parsed = parseCliArgs(args);
@@ -169,6 +146,78 @@ export async function runCliCommand(args: readonly string[]): Promise<CliRunResu
     report,
     json: parsed.options.json,
   };
+}
+
+function resolveHelpRequest(args: readonly string[]): CliRunResult | undefined {
+  if (args.length === 0) {
+    return {
+      kind: "output",
+      exitCode: 0,
+      text: globalHelpText,
+    };
+  }
+
+  const [first, second, ...extra] = args;
+
+  if (first === "--help" || first === "-h") {
+    return {
+      kind: "output",
+      exitCode: 0,
+      text: globalHelpText,
+    };
+  }
+
+  if (first === "help") {
+    if (!second) {
+      return {
+        kind: "output",
+        exitCode: 0,
+        text: globalHelpText,
+      };
+    }
+
+    if (extra.length > 0 || second.startsWith("-")) {
+      return {
+        kind: "usage",
+        exitCode: 2,
+        message: `Unknown help topic "${second}". Run tool-call-contract --help for commands.`,
+      };
+    }
+
+    if (!isHelpTopic(second)) {
+      return {
+        kind: "usage",
+        exitCode: 2,
+        message: `Unknown help topic "${second}". Run tool-call-contract --help for commands.`,
+      };
+    }
+
+    return {
+      kind: "output",
+      exitCode: 0,
+      text: renderCommandHelp(second),
+    };
+  }
+
+  if (args.includes("--help") || args.includes("-h")) {
+    if (!isHelpTopic(first)) {
+      return {
+        kind: "usage",
+        exitCode: 2,
+        message: first
+          ? `Unknown help topic "${first}". Run tool-call-contract --help for commands.`
+          : "Run tool-call-contract --help for commands.",
+      };
+    }
+
+    return {
+      kind: "output",
+      exitCode: 0,
+      text: renderCommandHelp(first),
+    };
+  }
+
+  return undefined;
 }
 
 export function parseCliArgs(args: readonly string[]): ParsedCliCommand | { message: string } {
@@ -281,6 +330,9 @@ export function parseCliArgs(args: readonly string[]): ParsedCliCommand | { mess
       case "--include-source":
         options.includeSource = true;
         break;
+      case "--force":
+        options.force = true;
+        break;
       case "--ignore": {
         const value = readOptionValue(rest, index, arg);
         if ("message" in value) {
@@ -322,6 +374,17 @@ export function parseCliArgs(args: readonly string[]): ParsedCliCommand | { mess
     }
   }
 
+  if (commandToken === "init") {
+    const usage = validateInitUsage(files);
+    if (usage) {
+      return usage;
+    }
+  } else if (options.force) {
+    return {
+      message: "--force can only be used with init.",
+    };
+  }
+
   if (commandToken === "normalize") {
     const usage = validateNormalizeUsage(files, options);
     if (usage) {
@@ -341,6 +404,23 @@ export function parseCliArgs(args: readonly string[]): ParsedCliCommand | { mess
 }
 
 async function createCommandReportForParsedInput(parsed: ParsedCliCommand): Promise<CommandReport> {
+  if (parsed.command === "init") {
+    const plan = await planInitProject({
+      cwd: parsed.options.cwd ?? process.cwd(),
+      dryRun: parsed.options.dryRun,
+      force: parsed.options.force,
+    });
+    const preWriteFindings = applyFindingPolicy(plan.findings, parsed.options);
+    const writeFindings = parsed.options.dryRun ? [] : await writeInitPlan(plan);
+    const findings = applyFindingPolicy([...preWriteFindings, ...writeFindings], parsed.options);
+
+    return createCommandReport({
+      command: parsed.command,
+      findings,
+      init: plan.init,
+    });
+  }
+
   try {
     const loaded = await loadConfig({
       cwd: parsed.options.cwd,
@@ -638,7 +718,8 @@ function isCommandName(value: unknown): value is CommandName {
     value === "validate" ||
     value === "redact" ||
     value === "generate-tests" ||
-    value === "normalize"
+    value === "normalize" ||
+    value === "init"
   );
 }
 
@@ -688,6 +769,16 @@ function validateGenerateTestsUsage(files: readonly string[]): { message: string
   if (files.length > 0) {
     return {
       message: "generate-tests does not accept file arguments.",
+    };
+  }
+
+  return undefined;
+}
+
+function validateInitUsage(files: readonly string[]): { message: string } | undefined {
+  if (files.length > 0) {
+    return {
+      message: "init does not accept file arguments.",
     };
   }
 
