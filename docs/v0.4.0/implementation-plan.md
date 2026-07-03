@@ -307,6 +307,18 @@ Acceptance criteria:
 - Any diagnostics output is compact enough for CI logs.
 - `tool-call-contract` product docs do not position the project as a `pkg-guard` testbed.
 
+Implementation notes:
+
+- Upgraded `pkg-guard` from `^0.3.0` to `^0.5.0`.
+- Added `scripts/check-package-diagnostics.mjs` as a repo-local wrapper around
+  `analyzePackageForDiagnostics({ mode: "fast" })`.
+- The wrapper asserts the analyzed package name when package metadata is returned, prints compact
+  diagnostics, and fails only on `error` severity diagnostics.
+- Added `pkg-guard:diagnostics` and wired it into `verify:release` before `pack:check`.
+- Kept `pack:check` on the stable `pkg-guard check` CLI plus `npm pack --dry-run`.
+- No adoption friction worth escalating to `pkg-guard` was found in this phase; the documented
+  experimental export, type declarations, package metadata, and diagnostic shape were sufficient.
+
 ## Phase 7: Examples, Smoke Checks, And Cross-Command Hardening
 
 Goal: catch adoption regressions across the full command sequence after v0.4 docs and init
