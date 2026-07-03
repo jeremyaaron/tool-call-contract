@@ -495,6 +495,83 @@ describe("reporters", () => {
     });
   });
 
+  it("renders human init summaries with next steps", () => {
+    const report = createCommandReport({
+      command: "init",
+      init: {
+        dryRun: false,
+        force: false,
+        files: [
+          {
+            path: "tool-call-contract.config.ts",
+            action: "created",
+          },
+          {
+            path: "captures/raw/openai-responses.json",
+            action: "skipped",
+            reason: "file already exists",
+          },
+        ],
+        packageScripts: [
+          {
+            name: "tool-contracts:check",
+            action: "created",
+          },
+        ],
+      },
+    });
+
+    expect(renderHumanReport(report)).toContain(
+      [
+        "Init: 1 created, 0 updated, 1 skipped.",
+        "  created tool-call-contract.config.ts",
+        "  skipped captures/raw/openai-responses.json (file already exists)",
+        "Package scripts: 1 created, 0 updated, 0 skipped.",
+        "  created tool-contracts:check",
+        "",
+        "Next steps:",
+        "  Run npm run tool-contracts:normalize:check",
+        "  Run npm run tool-contracts:redact",
+        "  Run npm run tool-contracts:validate",
+        "  Run npm run tool-contracts:tests -- --dry-run",
+      ].join("\n"),
+    );
+  });
+
+  it("renders human init dry-run summaries with preview wording", () => {
+    const report = createCommandReport({
+      command: "init",
+      init: {
+        dryRun: true,
+        force: false,
+        files: [
+          {
+            path: "tool-call-contract.config.ts",
+            action: "created",
+          },
+        ],
+        packageScripts: [
+          {
+            name: "tool-contracts:check",
+            action: "created",
+          },
+        ],
+      },
+    });
+
+    expect(renderHumanReport(report)).toContain(
+      [
+        "Init dry run: 1 would create, 0 would update, 0 skipped.",
+        "  created tool-call-contract.config.ts",
+        "Package scripts: 1 would create, 0 would update, 0 skipped.",
+        "  created tool-contracts:check",
+        "",
+        "Next steps:",
+        "  Run tool-call-contract init to write these changes.",
+      ].join("\n"),
+    );
+  });
+
   it("renders stable JSON", () => {
     expect(JSON.parse(renderJsonReport(createCommandReport({ command: "generate" })))).toEqual({
       schemaVersion: 1,

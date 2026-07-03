@@ -323,9 +323,11 @@ function pushInitMetadata(lines: string[], init: InitReportMetadata): void {
   const files = countInitActions(init.files);
   const scripts = countInitActions(init.packageScripts);
   const prefix = init.dryRun ? "Init dry run" : "Init";
+  const createdLabel = init.dryRun ? "would create" : "created";
+  const updatedLabel = init.dryRun ? "would update" : "updated";
 
   lines.push(
-    `${prefix}: ${files.created} created, ${files.updated} updated, ${files.skipped} skipped.`,
+    `${prefix}: ${files.created} ${createdLabel}, ${files.updated} ${updatedLabel}, ${files.skipped} skipped.`,
   );
 
   for (const file of init.files) {
@@ -334,13 +336,25 @@ function pushInitMetadata(lines: string[], init: InitReportMetadata): void {
   }
 
   lines.push(
-    `Package scripts: ${scripts.created} created, ${scripts.updated} updated, ${scripts.skipped} skipped.`,
+    `Package scripts: ${scripts.created} ${createdLabel}, ${scripts.updated} ${updatedLabel}, ${scripts.skipped} skipped.`,
   );
 
   for (const script of init.packageScripts) {
     const reason = script.reason ? ` (${script.reason})` : "";
     lines.push(`  ${script.action} ${script.name}${reason}`);
   }
+
+  lines.push("");
+  lines.push("Next steps:");
+  if (init.dryRun) {
+    lines.push("  Run tool-call-contract init to write these changes.");
+    return;
+  }
+
+  lines.push("  Run npm run tool-contracts:normalize:check");
+  lines.push("  Run npm run tool-contracts:redact");
+  lines.push("  Run npm run tool-contracts:validate");
+  lines.push("  Run npm run tool-contracts:tests -- --dry-run");
 }
 
 function countInitActions(entries: ReadonlyArray<{ action: "created" | "updated" | "skipped" }>): {

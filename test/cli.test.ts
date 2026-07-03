@@ -519,6 +519,81 @@ describe("runCliCommand", () => {
     expect(output.stderr).toBe("");
   });
 
+  it("runs the generated starter setup through the regression workflow", async () => {
+    const project = await createPackageProject();
+
+    await runCliCommand(["init", "--cwd", project]);
+    await installGeneratedConfigTestPackages(project);
+
+    await expect(runCliCommand(["check", "--cwd", project])).resolves.toMatchObject({
+      kind: "success",
+      exitCode: 0,
+      report: {
+        command: "check",
+        success: true,
+      },
+    });
+    await expect(
+      runCliCommand([
+        "normalize",
+        "--cwd",
+        project,
+        "--suite",
+        "raw",
+        "--format",
+        "openai-responses",
+        "--out-dir",
+        "captures/regression",
+        "--check",
+      ]),
+    ).resolves.toMatchObject({
+      kind: "success",
+      exitCode: 0,
+      report: {
+        command: "normalize",
+        success: true,
+      },
+    });
+    await expect(
+      runCliCommand(["redact", "--cwd", project, "--check", "--suite", "regression"]),
+    ).resolves.toMatchObject({
+      kind: "success",
+      exitCode: 0,
+      report: {
+        command: "redact",
+        success: true,
+      },
+    });
+    await expect(
+      runCliCommand(["validate", "--cwd", project, "--suite", "regression"]),
+    ).resolves.toMatchObject({
+      kind: "success",
+      exitCode: 0,
+      report: {
+        command: "validate",
+        success: true,
+        summary: {
+          validResults: 1,
+          invalidResults: 0,
+        },
+      },
+    });
+    await expect(
+      runCliCommand(["generate-tests", "--cwd", project, "--suite", "regression", "--dry-run"]),
+    ).resolves.toMatchObject({
+      kind: "success",
+      exitCode: 0,
+      report: {
+        command: "generate-tests",
+        success: true,
+        generatedTests: {
+          dryRun: true,
+          captureFiles: ["captures/regression/openai-responses.json"],
+        },
+      },
+    });
+  });
+
   it("runs check after loading config", async () => {
     const project = await createConfigProject();
 
@@ -2564,6 +2639,44 @@ async function readPackageJson(project: string): Promise<Record<string, unknown>
     string,
     unknown
   >;
+}
+
+async function installGeneratedConfigTestPackages(project: string): Promise<void> {
+  const nodeModules = path.join(project, "node_modules");
+  await mkdir(nodeModules, { recursive: true });
+  await writeShimPackage({
+    packageDir: path.join(nodeModules, "tool-call-contract"),
+    packageName: "tool-call-contract",
+    entryFile: "index.ts",
+    targetUrl: pathToFileURL(path.resolve("src/index.ts")).href,
+  });
+  await writeShimPackage({
+    packageDir: path.join(nodeModules, "zod"),
+    packageName: "zod",
+    entryFile: "index.js",
+    targetUrl: pathToFileURL(path.resolve("node_modules/zod/index.js")).href,
+  });
+}
+
+async function writeShimPackage(input: {
+  packageDir: string;
+  packageName: string;
+  entryFile: string;
+  targetUrl: string;
+}): Promise<void> {
+  await mkdir(input.packageDir, { recursive: true });
+  await writeJson(path.join(input.packageDir, "package.json"), {
+    name: input.packageName,
+    type: "module",
+    exports: {
+      ".": `./${input.entryFile}`,
+    },
+  });
+  await writeFile(
+    path.join(input.packageDir, input.entryFile),
+    `export * from ${JSON.stringify(input.targetUrl)};\n`,
+    "utf8",
+  );
 }
 
 async function writeProjectConfig(
