@@ -240,6 +240,10 @@ const commandHelps: Record<HelpTopic, CommandHelp> = {
   },
 };
 
+export const commandHelpEntries: readonly CommandHelp[] = Object.freeze(
+  Object.values(commandHelps),
+);
+
 export function isHelpTopic(value: unknown): value is HelpTopic {
   return (
     value === "init" ||

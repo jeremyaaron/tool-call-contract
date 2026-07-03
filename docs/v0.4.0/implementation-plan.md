@@ -352,6 +352,18 @@ Acceptance criteria:
 - Help output and README examples do not drift from parser behavior.
 - Existing v0.1-v0.3 examples still pass.
 
+Implementation notes:
+
+- Reviewed the basic example project and README example commands; no stale terminology or package
+  script changes were needed.
+- Added parser-backed coverage for every command-specific help example so future help text cannot
+  advertise invalid option combinations.
+- Added JSON-mode smoke coverage for the generated starter workflow:
+  `init`, `check`, `normalize --check`, `redact --check`, `validate`, and
+  `generate-tests --dry-run`.
+- Kept the existing executable `examples/basic` e2e coverage as the guard for the README example
+  project and pre-v0.4 workflows.
+
 ## Phase 8: v0.4.0 Release Hardening
 
 Goal: prepare the package for a clean v0.4.0 release.

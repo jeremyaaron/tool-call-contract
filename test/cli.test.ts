@@ -7,6 +7,7 @@ import { describe, expect, it } from "vitest";
 
 import { version } from "../src/index.js";
 import { parseCliArgs, runCli, runCliCommand } from "../src/cli/app.js";
+import { commandHelpEntries } from "../src/cli/help.js";
 
 describe("package scaffold", () => {
   it("exports the package version", () => {
@@ -278,6 +279,19 @@ describe("runCliCommand", () => {
       expect(topicHelp.text).toContain("--dry-run");
       expect(topicHelp.text).toContain("--include-source");
       expect(topicHelp.text).toContain("openai-responses");
+    }
+  });
+
+  it("keeps command help examples aligned with parser behavior", () => {
+    for (const help of commandHelpEntries) {
+      for (const example of help.examples) {
+        const parsed = parseCliArgs(stripBinaryFromExample(example));
+
+        expect(parsed).not.toHaveProperty("message");
+        expect(parsed).toMatchObject({
+          command: help.command,
+        });
+      }
     }
   });
 
@@ -592,6 +606,77 @@ describe("runCliCommand", () => {
         },
       },
     });
+  });
+
+  it("returns consistent JSON reports across the generated starter workflow", async () => {
+    const project = await createPackageProject();
+
+    const initReport = await runJsonCommand(["init", "--cwd", project, "--json"]);
+    await installGeneratedConfigTestPackages(project);
+
+    const reports = [
+      initReport,
+      await runJsonCommand(["check", "--cwd", project, "--json"]),
+      await runJsonCommand([
+        "normalize",
+        "--cwd",
+        project,
+        "--suite",
+        "raw",
+        "--format",
+        "openai-responses",
+        "--out-dir",
+        "captures/regression",
+        "--check",
+        "--json",
+      ]),
+      await runJsonCommand([
+        "redact",
+        "--cwd",
+        project,
+        "--check",
+        "--suite",
+        "regression",
+        "--json",
+      ]),
+      await runJsonCommand(["validate", "--cwd", project, "--suite", "regression", "--json"]),
+      await runJsonCommand([
+        "generate-tests",
+        "--cwd",
+        project,
+        "--suite",
+        "regression",
+        "--dry-run",
+        "--json",
+      ]),
+    ];
+
+    expect(reports.map((report) => report.command)).toEqual([
+      "init",
+      "check",
+      "normalize",
+      "redact",
+      "validate",
+      "generate-tests",
+    ]);
+
+    for (const report of reports) {
+      expect(report).toMatchObject({
+        schemaVersion: 1,
+        success: true,
+        summary: {
+          errors: 0,
+          warnings: 0,
+          info: 0,
+        },
+      });
+    }
+
+    expect(reports[0]).toHaveProperty("init");
+    expect(reports[2]).toHaveProperty("normalization.checked", true);
+    expect(reports[3]).toHaveProperty("redaction.checked", true);
+    expect(reports[4]).toHaveProperty("validation.suites.0.name", "regression");
+    expect(reports[5]).toHaveProperty("generatedTests.dryRun", true);
   });
 
   it("runs check after loading config", async () => {
@@ -2603,6 +2688,26 @@ function createCliOutput() {
   };
 
   return output;
+}
+
+function stripBinaryFromExample(example: string): string[] {
+  const parts = example.trim().split(/\s+/);
+
+  if (parts[0] !== "tool-call-contract") {
+    throw new Error(`Unexpected help example binary: ${example}`);
+  }
+
+  return parts.slice(1);
+}
+
+async function runJsonCommand(args: string[]): Promise<Record<string, unknown>> {
+  const output = createCliOutput();
+  const exitCode = await runCli(args, output.io);
+
+  expect(exitCode).toBe(0);
+  expect(output.stderr).toBe("");
+
+  return JSON.parse(output.stdout) as Record<string, unknown>;
 }
 
 interface ConfigProjectOptions {
