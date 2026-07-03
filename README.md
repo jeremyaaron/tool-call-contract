@@ -5,11 +5,25 @@ Define AI tool contracts once, then validate captured calls and generate reviewa
 `tool-call-contract` is a TypeScript library and CLI for teams building agentic apps with schema-defined tools. A contract gives you one source of truth for:
 
 - runtime call validation with Zod
-- raw provider trace normalization into stable captures
+- raw provider trace normalization into curated regression fixtures
 - generated valid and invalid fixtures
 - OpenAI-compatible tool schema export
 - lightweight Markdown tool docs
 - stale artifact checks in CI
+
+## What This Is
+
+`tool-call-contract` defines and tests contracts for AI tool calls.
+
+It validates tool calls wherever you have them, normalizes selected raw provider/framework traces into the canonical capture shape, redacts configured paths, and generates regression tests from reviewed fixtures.
+
+Use it when you want a small local/CI workflow for contract drift, fixture validation, and repeatable tool-call regression tests.
+
+## What This Is Not
+
+`tool-call-contract` is not a telemetry backend, model runner, tool orchestrator, runtime instrumentation package, hosted dashboard, or PII detector.
+
+Raw traces are operational data. Keep production-scale traces in logs, object storage, databases, or observability systems. Commit only small, reviewed, redacted regression fixtures.
 
 ## Install
 
@@ -17,7 +31,38 @@ Define AI tool contracts once, then validate captured calls and generate reviewa
 npm install -D tool-call-contract zod
 ```
 
-`zod` is a peer dependency. The MVP targets Zod 4.
+`zod` is a peer dependency. The package targets Zod 4.
+
+## Quickstart
+
+Create a starter config, sample raw trace, normalized regression fixture, and package scripts:
+
+```sh
+npx tool-call-contract init
+```
+
+Preview first if the project already has files you care about:
+
+```sh
+npx tool-call-contract init --dry-run
+```
+
+Then run the starter workflow:
+
+```sh
+npm run tool-contracts:check
+npm run tool-contracts:normalize:check
+npm run tool-contracts:redact
+npm run tool-contracts:validate
+npm run tool-contracts:tests -- --dry-run
+```
+
+For command-specific options and examples:
+
+```sh
+npx tool-call-contract help init
+npx tool-call-contract help normalize
+```
 
 ## Define Contracts
 
@@ -128,7 +173,7 @@ npx tool-call-contract validate --suite smoke
 npx tool-call-contract validate --suite regression --json
 ```
 
-Supported MVP capture shapes:
+Supported capture shapes:
 
 ```json
 {
@@ -166,7 +211,7 @@ Supported MVP capture shapes:
 }
 ```
 
-OpenAI Chat Completions-style `choices[].message.tool_calls` and OpenAI Responses-style `output[]` function calls are also normalized.
+OpenAI Chat Completions-style `choices[].message.tool_calls` and OpenAI Responses-style `output[]` function calls are also accepted by validation.
 
 Unknown tools fail validation by default. To allow mixed traces while still reporting unknown calls as warnings:
 
@@ -184,7 +229,7 @@ JSON validation reports include grouped metadata for suites, files, and contract
 
 ## Normalize Raw Traces
 
-Most agent frameworks do not emit `tool-call-contract`'s canonical capture shape directly. Use `normalize` to turn raw provider or framework traces into deterministic regression captures:
+Most agent frameworks do not emit `tool-call-contract`'s canonical capture shape directly. Use `normalize` to turn selected raw provider or framework traces into deterministic regression fixtures:
 
 ```sh
 npx tool-call-contract normalize captures/raw/openai.json --format openai-responses --out captures/regression/openai.json
@@ -278,7 +323,7 @@ Then run:
 npx tool-call-contract normalize --suite rawCustom --format generic --out-dir captures/regression
 ```
 
-Normalization is not redaction. Normalize first to get a stable contract shape, then run `redact --check` before committing captures that may contain sensitive data.
+Normalization is not redaction. Normalize first to get a stable contract shape, then run `redact --check` before committing fixtures that may contain sensitive data.
 
 ## Redact Captures
 
@@ -355,6 +400,20 @@ Useful package scripts:
 }
 ```
 
+## Recommended CI
+
+For projects that commit reviewed regression fixtures, use this order:
+
+```sh
+npx tool-call-contract check
+npx tool-call-contract normalize --suite raw --format openai-responses --out-dir captures/regression --check
+npx tool-call-contract redact --check --suite regression
+npx tool-call-contract validate --suite regression
+npx tool-call-contract generate-tests --suite regression --dry-run
+```
+
+Use `generate --dry-run` as an additional local review step when generated artifacts are not committed, or rely on `check` when the generated manifest is committed.
+
 ## Library Usage
 
 ```ts
@@ -391,6 +450,13 @@ npx tool-call-contract generate-tests --cwd examples/basic --suite regression
 
 The example defines three contracts and includes direct captures, OpenAI-style captures, raw OpenAI Responses and LangChain traces, normalized regression captures, redaction checks, capture suites, and generated-test output.
 
+## Guides And Cookbooks
+
+- [Agent integration guide](AGENTS.md)
+- [OpenAI Responses capture cookbook](docs/cookbooks/openai-responses.md)
+- [Vercel AI SDK capture cookbook](docs/cookbooks/vercel-ai-sdk.md)
+- [LangChain capture cookbook](docs/cookbooks/langchain.md)
+
 ## Config Loading Is Trusted Code
 
 The CLI loads `tool-call-contract.config.ts` as code. Treat config files as trusted project code, the same way you would treat `vite.config.ts`, `eslint.config.js`, or a test setup file. Do not run the CLI against untrusted repositories or unreviewed config files.
@@ -416,7 +482,7 @@ After the package exists on npm, tagged releases can use GitHub trusted publishi
 - Zod schemas must be representable as JSON Schema for generated docs and OpenAI schema output.
 - Custom Zod refinements still validate at runtime, but may not be expressible in generated artifacts.
 - Fixture synthesis intentionally supports a conservative subset of JSON Schema.
-- OpenAI export is the only provider schema output in the MVP.
+- OpenAI export is the only provider schema output in the current release.
 - `validate` accepts JSON captures only.
 - `normalize` supports common completed tool-call records, not streaming delta reconstruction.
 - Normalized output is still capture data. Review and redact sensitive content before committing.
@@ -437,3 +503,6 @@ After the package exists on npm, tagged releases can use GitHub trusted publishi
 - [v0.3 technical design](docs/v0.3.0/technical-design.md)
 - [v0.3 implementation plan](docs/v0.3.0/implementation-plan.md)
 - [v0.3 release notes](docs/v0.3.0/release.md)
+- [v0.4 PRD](docs/v0.4.0/prd.md)
+- [v0.4 technical design](docs/v0.4.0/technical-design.md)
+- [v0.4 implementation plan](docs/v0.4.0/implementation-plan.md)

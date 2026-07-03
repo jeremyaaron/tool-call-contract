@@ -6,12 +6,12 @@
     <title>tool-call-contract</title>
     <meta
       name="description"
-      content="Define AI tool contracts once, then normalize raw traces, validate captured calls, redact traces, and generate regression tests."
+      content="Define AI tool contracts once, bootstrap a local regression workflow, normalize selected raw traces, validate fixtures, redact captures, and generate tests."
     />
     <meta property="og:title" content="tool-call-contract" />
     <meta
       property="og:description"
-      content="A TypeScript library and CLI for AI tool-call contracts, raw trace normalization, capture validation, redaction, regression tests, and generated artifacts."
+      content="A TypeScript library and CLI for AI tool-call contracts, starter setup, raw trace normalization, fixture validation, redaction, regression tests, and generated artifacts."
     />
     <meta property="og:type" content="website" />
     <meta name="theme-color" content="#f7f4ee" />
@@ -38,9 +38,9 @@
           <p class="eyebrow">TypeScript contracts for AI tools</p>
           <h1 id="hero-title">tool-call-contract</h1>
           <p class="hero-copy">
-            Define each tool once with Zod, then normalize raw provider traces, validate captured
-            calls, redact sensitive data, generate regression tests, and keep reviewable artifacts
-            in sync.
+            Define each tool once with Zod, bootstrap a starter workflow, normalize selected raw
+            provider traces into curated regression fixtures, validate calls, redact sensitive data,
+            and keep reviewable artifacts in sync.
           </p>
           <div class="hero-actions" aria-label="Primary actions">
             <a class="button primary" href="#install">Install</a>
@@ -55,7 +55,10 @@
             <span></span>
             <span></span>
           </div>
-          <pre><code>tool-call-contract check
+          <pre><code>tool-call-contract init
+Init: 3 created, 0 updated, 0 skipped.
+
+tool-call-contract check
 No findings.
 
 tool-call-contract generate
@@ -80,18 +83,20 @@ All captures already redacted.</code></pre>
         <div class="workflow-grid">
           <article>
             <span class="step">1</span>
-            <h3>Define</h3>
-            <p>Write a named tool contract with a description and a Zod input schema.</p>
+            <h3>Bootstrap</h3>
+            <p>Start with <code>init</code>, then replace the sample contract with real tools.</p>
           </article>
           <article>
             <span class="step">2</span>
-            <h3>Generate</h3>
-            <p>Create reviewable fixtures, provider schemas, docs, and content hashes.</p>
+            <h3>Define</h3>
+            <p>Write named tool contracts with descriptions and Zod input schemas.</p>
           </article>
           <article>
             <span class="step">3</span>
             <h3>Normalize</h3>
-            <p>Convert OpenAI, Vercel AI SDK, LangChain, or custom traces into stable captures.</p>
+            <p>
+              Convert selected OpenAI, Vercel AI SDK, LangChain, or custom traces into fixtures.
+            </p>
           </article>
           <article>
             <span class="step">4</span>
@@ -108,11 +113,12 @@ All captures already redacted.</code></pre>
           <p>
             The CLI writes deterministic files that can live in source control. CI can run
             <code>check</code> to catch stale generated output before a drifted tool contract
-            reaches production.
+            reaches production. Raw production telemetry belongs in logs or observability systems;
+            commit only reviewed, redacted regression fixtures.
           </p>
         </div>
         <div class="artifact-list" aria-label="Generated artifacts">
-          <div><strong>captures</strong><span>normalized calls from raw provider traces</span></div>
+          <div><strong>captures</strong><span>curated fixtures from selected raw traces</span></div>
           <div><strong>fixtures</strong><span>valid and invalid normalized calls</span></div>
           <div><strong>schemas</strong><span>OpenAI-compatible tool definitions</span></div>
           <div><strong>docs</strong><span>Markdown references from executable contracts</span></div>
@@ -126,10 +132,11 @@ All captures already redacted.</code></pre>
       <section class="section code-section" id="install" aria-labelledby="install-title">
         <div class="section-heading">
           <p class="eyebrow">Get started</p>
-          <h2 id="install-title">Install, define, verify</h2>
+          <h2 id="install-title">Install, initialize, verify</h2>
         </div>
         <div class="code-grid">
-          <pre><code>npm install -D tool-call-contract zod</code></pre>
+          <pre><code>npm install -D tool-call-contract zod
+npx tool-call-contract init</code></pre>
           <pre><code>import { z } from "zod";
 import { defineConfig, defineToolContract } from "tool-call-contract";
 
@@ -154,11 +161,10 @@ export default defineConfig({
   },
 });</code></pre>
           <pre><code>npx tool-call-contract check
-npx tool-call-contract generate
-npx tool-call-contract normalize --suite raw --format openai-responses --out-dir captures/regression
-npx tool-call-contract validate --suite regression
+npx tool-call-contract normalize --suite raw --format openai-responses --out-dir captures/regression --check
 npx tool-call-contract redact --check --suite regression
-npx tool-call-contract generate-tests --suite regression</code></pre>
+npx tool-call-contract validate --suite regression
+npx tool-call-contract generate-tests --suite regression --dry-run</code></pre>
         </div>
       </section>
     </main>
@@ -167,6 +173,10 @@ npx tool-call-contract generate-tests --suite regression</code></pre>
       <span>tool-call-contract</span>
       <a href="https://www.npmjs.com/package/tool-call-contract">npm</a>
       <a href="https://github.com/jeremyaaron/tool-call-contract">GitHub</a>
+      <a href="https://github.com/jeremyaaron/tool-call-contract/blob/main/AGENTS.md">Agents</a>
+      <a href="https://github.com/jeremyaaron/tool-call-contract/tree/main/docs/cookbooks">
+        Cookbooks
+      </a>
     </footer>
 
     <script src="./main.js"></script>
