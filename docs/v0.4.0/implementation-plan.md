@@ -403,6 +403,20 @@ Acceptance criteria:
   `pkg-guard` diagnostics dogfooding.
 - The repo is ready for tagging after review.
 
+Implementation notes:
+
+- Bumped package metadata, exported library version, CLI `--version`, artifact manifest default
+  version, tests, and packed-package smoke expectations to `0.4.0`.
+- Added `docs/v0.4.0/release.md` and updated `CHANGELOG.md` plus README release-note links.
+- Reviewed the package export map and built public entry; no unstable CLI help or `pkg-guard`
+  internals are exported from the package root.
+- Reviewed `/site`; current copy already reflects the v0.4 starter, normalization, redaction,
+  validation, and generated-test workflow.
+- Reviewed dry-run package contents. The package includes only `CHANGELOG.md`, `LICENSE`,
+  `README.md`, built `dist` entries, and `package.json`.
+- Verified `node dist/cli/index.js --version` prints `0.4.0`.
+- Verified `npm run verify:release` passes.
+
 ## Deferred Post-v0.4.0 Work
 
 These ideas are useful, but intentionally outside v0.4.0:
