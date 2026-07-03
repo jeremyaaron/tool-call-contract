@@ -430,6 +430,71 @@ describe("reporters", () => {
     });
   });
 
+  it("renders init metadata in stable JSON", () => {
+    expect(
+      JSON.parse(
+        renderJsonReport(
+          createCommandReport({
+            command: "init",
+            init: {
+              dryRun: true,
+              force: false,
+              files: [
+                {
+                  path: "tool-call-contract.config.ts",
+                  action: "created",
+                },
+                {
+                  path: "captures/raw/openai-responses.json",
+                  action: "skipped",
+                  reason: "file already exists",
+                },
+              ],
+              packageScripts: [
+                {
+                  name: "tool-contracts:check",
+                  action: "created",
+                },
+              ],
+            },
+          }),
+        ),
+      ),
+    ).toEqual({
+      schemaVersion: 1,
+      command: "init",
+      success: true,
+      summary: {
+        errors: 0,
+        warnings: 0,
+        info: 0,
+        validResults: 0,
+        invalidResults: 0,
+      },
+      init: {
+        dryRun: true,
+        force: false,
+        files: [
+          {
+            path: "tool-call-contract.config.ts",
+            action: "created",
+          },
+          {
+            path: "captures/raw/openai-responses.json",
+            action: "skipped",
+            reason: "file already exists",
+          },
+        ],
+        packageScripts: [
+          {
+            name: "tool-contracts:check",
+            action: "created",
+          },
+        ],
+      },
+    });
+  });
+
   it("renders stable JSON", () => {
     expect(JSON.parse(renderJsonReport(createCommandReport({ command: "generate" })))).toEqual({
       schemaVersion: 1,
