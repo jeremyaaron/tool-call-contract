@@ -226,7 +226,64 @@ describe("runCliCommand", () => {
     });
     if (result.kind === "output") {
       expect(result.text).toContain("tool-call-contract <command>");
+      expect(result.text).toContain("init");
+      expect(result.text).toContain("tool-call-contract help <command>");
     }
+  });
+
+  it("returns global help with the help command", async () => {
+    await expect(runCliCommand(["help"])).resolves.toMatchObject({
+      kind: "output",
+      exitCode: 0,
+      text: expect.stringContaining("tool-call-contract help <command>"),
+    });
+  });
+
+  it("returns command help from help topics and command help flags", async () => {
+    const topicHelp = await runCliCommand(["help", "normalize"]);
+    const flagHelp = await runCliCommand(["normalize", "--help"]);
+
+    expect(topicHelp).toEqual(flagHelp);
+    expect(topicHelp).toMatchObject({
+      kind: "output",
+      exitCode: 0,
+      text: expect.stringContaining("--out-dir <path>"),
+    });
+    if (topicHelp.kind === "output") {
+      expect(topicHelp.text).toContain("--check");
+      expect(topicHelp.text).toContain("--dry-run");
+      expect(topicHelp.text).toContain("--include-source");
+      expect(topicHelp.text).toContain("openai-responses");
+    }
+  });
+
+  it("returns init command help before init is implemented", async () => {
+    await expect(runCliCommand(["help", "init"])).resolves.toMatchObject({
+      kind: "output",
+      exitCode: 0,
+      text: expect.stringContaining("--force"),
+    });
+  });
+
+  it("returns usage errors for unknown help topics", async () => {
+    await expect(runCliCommand(["help", "nope"])).resolves.toEqual({
+      kind: "usage",
+      exitCode: 2,
+      message: 'Unknown help topic "nope". Run tool-call-contract --help for commands.',
+    });
+    await expect(runCliCommand(["nope", "--help"])).resolves.toEqual({
+      kind: "usage",
+      exitCode: 2,
+      message: 'Unknown help topic "nope". Run tool-call-contract --help for commands.',
+    });
+  });
+
+  it("returns command help without loading config", async () => {
+    await expect(runCliCommand(["normalize", "--help", "--cwd", tmpdir()])).resolves.toMatchObject({
+      kind: "output",
+      exitCode: 0,
+      text: expect.stringContaining("tool-call-contract normalize"),
+    });
   });
 
   it("returns version output", async () => {
