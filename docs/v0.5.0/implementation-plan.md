@@ -305,6 +305,20 @@ Acceptance criteria:
 - The example proves the clean and stale `artifacts --check` path.
 - `examples/basic` does not gain unnecessary generated output churn.
 
+Implementation notes:
+
+- Extended the existing `examples/basic` e2e workflow to run `artifacts --check` after `generate`
+  and assert the generated artifacts are fresh.
+- Mutated a generated docs artifact in the temp example project, verified `artifacts --check`
+  fails with `artifact.stale`, then regenerated before continuing the existing check, validation,
+  redaction, and generated-test assertions.
+- Reviewed `examples/basic`; it does not include package scripts today, so no example script churn
+  was added in this phase.
+
+Verification:
+
+- `npm test -- test/e2e.test.ts`
+
 ## Phase 5: README, Help, And Product Positioning
 
 Goal: make the generated artifact lifecycle clear to users and coding agents.
