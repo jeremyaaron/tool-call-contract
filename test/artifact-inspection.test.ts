@@ -24,6 +24,15 @@ describe("inspectGeneratedArtifacts", () => {
     expect(inspection.findings).toEqual([]);
     expect(inspection.manifestFound).toBe(false);
     expect(inspection.fresh).toBe(false);
+    expect(inspection.report).toMatchObject({
+      checked: false,
+      fresh: false,
+      manifest: {
+        path: ".tool-call-contract/manifest.json",
+        found: false,
+        valid: false,
+      },
+    });
     expect(inspection.artifacts.created).toEqual([
       ".tool-call-contract/fixtures/search_docs.valid.json",
       ".tool-call-contract/fixtures/search_docs.invalid.json",
@@ -46,6 +55,14 @@ describe("inspectGeneratedArtifacts", () => {
 
     expect(inspection.findings).toEqual([]);
     expect(inspection.fresh).toBe(true);
+    expect(inspection.report).toMatchObject({
+      checked: true,
+      fresh: true,
+      manifest: {
+        found: false,
+        valid: false,
+      },
+    });
     expect(inspection.artifacts).toEqual({
       created: [],
       updated: [],
@@ -69,6 +86,14 @@ describe("inspectGeneratedArtifacts", () => {
     expect(inspection.findings).toEqual([]);
     expect(inspection.manifestFound).toBe(true);
     expect(inspection.fresh).toBe(true);
+    expect(inspection.report).toMatchObject({
+      checked: true,
+      fresh: true,
+      manifest: {
+        found: true,
+        valid: true,
+      },
+    });
     expect(inspection.artifacts.updated).toEqual([]);
     expect(inspection.artifacts.created).toEqual([]);
     expect(inspection.artifacts.unchanged).toContain(".tool-call-contract/manifest.json");
@@ -88,6 +113,7 @@ describe("inspectGeneratedArtifacts", () => {
     });
 
     expect(inspection.fresh).toBe(false);
+    expect(inspection.report.fresh).toBe(false);
     expect(inspection.findings).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
@@ -118,6 +144,12 @@ describe("inspectGeneratedArtifacts", () => {
       ".tool-call-contract/docs/create_issue.md",
     ]);
     expect(inspection.artifacts.deleted).toEqual([
+      ".tool-call-contract/fixtures/create_issue.valid.json",
+      ".tool-call-contract/fixtures/create_issue.invalid.json",
+      ".tool-call-contract/schemas/create_issue.openai.json",
+      ".tool-call-contract/docs/create_issue.md",
+    ]);
+    expect(inspection.report.cleanable).toEqual([
       ".tool-call-contract/fixtures/create_issue.valid.json",
       ".tool-call-contract/fixtures/create_issue.invalid.json",
       ".tool-call-contract/schemas/create_issue.openai.json",

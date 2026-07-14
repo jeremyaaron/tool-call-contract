@@ -34,6 +34,7 @@ export {
   summarizeReport,
   type CommandName,
   type CommandReport,
+  type ArtifactInspectionReportMetadata,
   type Finding,
   type GeneratedTestReportMetadata,
   type InitReportMetadata,

@@ -186,6 +186,20 @@ Acceptance criteria:
 - Human artifact inspection output is concise and CI-readable.
 - JSON output is deterministic.
 
+Implementation notes:
+
+- Added `ArtifactInspectionReportMetadata` and optional `artifactInspection` metadata to
+  `CommandReport`.
+- Exported the artifact inspection report metadata type from the package root with the other
+  report metadata types.
+- Extended `createCommandReport`, `renderJsonReport`, and `renderHumanReport` support for
+  artifact inspection metadata.
+- Added human rendering for fresh/not-fresh state, missing/invalid manifest status, cleanable
+  manifest-owned files, and next-step guidance.
+- Updated `inspectGeneratedArtifacts` to return ready-to-attach `artifactInspection` report
+  metadata for future command wiring.
+- Added reporting tests for fresh, stale, cleanable, and stable JSON artifact inspection output.
+
 ## Phase 3: `artifacts` Parser And CLI Command
 
 Goal: expose `tool-call-contract artifacts` as a read-only artifact inspection command.

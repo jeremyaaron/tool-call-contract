@@ -11,7 +11,12 @@ import {
   type PlannedArtifactDelete,
 } from "./artifact-writer.js";
 import type { ContractRegistry } from "./registry.js";
-import type { CommandReport, Finding, Severity } from "./reporting.js";
+import type {
+  ArtifactInspectionReportMetadata,
+  CommandReport,
+  Finding,
+  Severity,
+} from "./reporting.js";
 
 export interface ArtifactInspectionOptions extends ArtifactWriteRoots {
   registry: ContractRegistry;
@@ -26,6 +31,7 @@ export interface ArtifactInspectionResult {
   plan?: ArtifactWritePlan;
   artifacts: NonNullable<CommandReport["artifacts"]>;
   cleanable: PlannedArtifactDelete[];
+  report: ArtifactInspectionReportMetadata;
   findings: Finding[];
   fresh: boolean;
   manifestFound: boolean;
@@ -41,11 +47,20 @@ export async function inspectGeneratedArtifacts(
   const baseFindings = [...manifest.findings];
 
   if (!manifest.manifest && options.skipIfManifestMissing && baseFindings.length === 0) {
+    const report = createInspectionReport({
+      options,
+      manifestFound: false,
+      manifestValid: false,
+      fresh: true,
+      cleanable: [],
+    });
+
     return {
       generation,
       manifest,
       artifacts: emptyArtifactSummary(),
       cleanable: [],
+      report,
       findings: [],
       fresh: true,
       manifestFound: false,
@@ -63,17 +78,54 @@ export async function inspectGeneratedArtifacts(
       }))
     : [];
   const findings = [...baseFindings, ...plan.findings, ...freshnessFindings];
+  const fresh =
+    plan.entries.every((entry) => entry.action === "unchanged") && findings.length === 0;
+  const cleanable = plan.deletes;
+  const report = createInspectionReport({
+    options,
+    manifestFound: Boolean(manifest.manifest),
+    manifestValid: manifest.findings.length === 0 && Boolean(manifest.manifest),
+    fresh,
+    cleanable: cleanable.map((entry) => entry.path),
+  });
 
   return {
     generation,
     manifest,
     plan,
     artifacts: plan.artifacts,
-    cleanable: plan.deletes,
+    cleanable,
+    report,
     findings,
-    fresh: plan.entries.every((entry) => entry.action === "unchanged") && findings.length === 0,
+    fresh,
     manifestFound: Boolean(manifest.manifest),
   };
+}
+
+function createInspectionReport(input: {
+  options: ArtifactInspectionOptions;
+  manifestFound: boolean;
+  manifestValid: boolean;
+  fresh: boolean;
+  cleanable: string[];
+}): ArtifactInspectionReportMetadata {
+  return {
+    checked: input.options.staleSeverity === "error",
+    fresh: input.fresh,
+    manifest: {
+      path: toProjectPath(
+        input.options.cwd,
+        path.join(path.resolve(input.options.outDir), "manifest.json"),
+      ),
+      found: input.manifestFound,
+      valid: input.manifestValid,
+    },
+    cleanable: input.cleanable,
+  };
+}
+
+function toProjectPath(cwd: string, absolutePath: string): string {
+  return path.relative(path.resolve(cwd), absolutePath).replaceAll(path.sep, "/");
 }
 
 function emptyArtifactSummary(): NonNullable<CommandReport["artifacts"]> {
