@@ -136,6 +136,17 @@ Acceptance criteria:
 - v0.4 manifests remain readable.
 - No new public package exports.
 
+Implementation notes:
+
+- Added internal `src/artifact-inspection.ts` to generate expected artifacts, load manifests, plan
+  file state, optionally report cleanable manifest-owned files, and convert stale entries into
+  `artifact.stale` findings with caller-selected severity.
+- Routed `check` artifact freshness through `inspectGeneratedArtifacts` with
+  `skipIfManifestMissing: true`, preserving broad check behavior when no generated manifest exists.
+- Added `test/artifact-inspection.test.ts` for no-manifest inspection, check-compatible missing
+  manifest skips, fresh manifests, stale manifests, and cleanable manifest-owned files.
+- Kept the helper internal and did not add new public package exports.
+
 ## Phase 2: Report Metadata And Human Rendering
 
 Goal: add report structures and rendering support for artifact inspection before the command is

@@ -10,12 +10,8 @@ import {
 import path from "node:path";
 
 import { generateArtifacts } from "../artifacts.js";
-import {
-  collectArtifactFreshnessFindings,
-  loadArtifactManifest,
-  planArtifactWrites,
-  writeArtifactPlan,
-} from "../artifact-writer.js";
+import { inspectGeneratedArtifacts } from "../artifact-inspection.js";
+import { loadArtifactManifest, planArtifactWrites, writeArtifactPlan } from "../artifact-writer.js";
 import { resolveCaptureFiles } from "../captures.js";
 import { runContractChecks } from "../checks.js";
 import { ConfigLoadError, loadConfig } from "../config.js";
@@ -631,22 +627,14 @@ async function createArtifactFreshnessFindings(
   registry: ReturnType<typeof createContractRegistry>["registry"],
   roots: { cwd: string; outDir: string },
 ): Promise<Finding[]> {
-  const previousManifest = await loadArtifactManifest(roots);
-
-  if (!previousManifest.manifest) {
-    return previousManifest.findings;
-  }
-
-  const generation = generateArtifacts(registry, {
-    outDir: path.relative(roots.cwd, roots.outDir),
+  const inspection = await inspectGeneratedArtifacts({
+    ...roots,
+    registry,
+    staleSeverity: "error",
+    skipIfManifestMissing: true,
   });
-  const plan = await planArtifactWrites(generation.artifacts, roots);
 
-  return [
-    ...previousManifest.findings,
-    ...plan.findings,
-    ...collectArtifactFreshnessFindings(plan),
-  ];
+  return inspection.findings;
 }
 
 function hasErrorFindings(findings: readonly Finding[]): boolean {
