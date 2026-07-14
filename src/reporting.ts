@@ -19,6 +19,7 @@ export interface Finding {
 export type CommandName =
   | "check"
   | "generate"
+  | "artifacts"
   | "validate"
   | "redact"
   | "generate-tests"

@@ -370,6 +370,13 @@ export function parseCliArgs(args: readonly string[]): ParsedCliCommand | { mess
     }
   }
 
+  if (commandToken === "artifacts") {
+    const usage = validateArtifactsUsage(files, options);
+    if (usage) {
+      return usage;
+    }
+  }
+
   if (commandToken === "init") {
     const usage = validateInitUsage(files);
     if (usage) {
@@ -459,6 +466,29 @@ async function createCommandReportForParsedInput(parsed: ParsedCliCommand): Prom
         command: parsed.command,
         findings,
         artifacts: plan.artifacts,
+      });
+    }
+
+    if (parsed.command === "artifacts") {
+      const inspection = await inspectGeneratedArtifacts({
+        ...roots,
+        registry,
+        includeCleanable: true,
+        staleSeverity: parsed.options.check ? "error" : undefined,
+      });
+      const findings = applyFindingPolicy(
+        [...registryFindings, ...inspection.findings],
+        parsed.options,
+      );
+
+      return createCommandReport({
+        command: parsed.command,
+        findings,
+        artifactInspection: inspection.report,
+        artifacts: {
+          ...inspection.artifacts,
+          deleted: [],
+        },
       });
     }
 
@@ -615,7 +645,10 @@ async function createCommandReportForParsedInput(parsed: ParsedCliCommand): Prom
           },
         ],
         success: false,
-        artifacts: parsed.command === "generate" ? emptyArtifactReport() : undefined,
+        artifacts:
+          parsed.command === "generate" || parsed.command === "artifacts"
+            ? emptyArtifactReport()
+            : undefined,
       });
     }
 
@@ -703,6 +736,7 @@ function isCommandName(value: unknown): value is CommandName {
   return (
     value === "check" ||
     value === "generate" ||
+    value === "artifacts" ||
     value === "validate" ||
     value === "redact" ||
     value === "generate-tests" ||
@@ -757,6 +791,31 @@ function validateGenerateTestsUsage(files: readonly string[]): { message: string
   if (files.length > 0) {
     return {
       message: "generate-tests does not accept file arguments.",
+    };
+  }
+
+  return undefined;
+}
+
+function validateArtifactsUsage(
+  files: readonly string[],
+  options: CliOptions,
+): { message: string } | undefined {
+  if (files.length > 0) {
+    return {
+      message: "artifacts does not accept file arguments.",
+    };
+  }
+
+  if (options.clean) {
+    return {
+      message: "--clean can only be used with generate.",
+    };
+  }
+
+  if (options.dryRun) {
+    return {
+      message: "--dry-run is not needed with artifacts because artifacts never writes files.",
     };
   }
 

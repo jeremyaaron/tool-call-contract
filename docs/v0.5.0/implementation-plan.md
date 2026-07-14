@@ -252,6 +252,30 @@ Acceptance criteria:
 - `artifacts --check` fails when no manifest exists.
 - Command help examples parse successfully.
 
+Implementation notes:
+
+- Added `artifacts` as a first-class command name with global help, command-specific help, and
+  parser support for `artifacts`, `artifacts --check`, `artifacts --json`, `--cwd`, `--config`,
+  and `--out-dir`.
+- Rejected positional file arguments, `artifacts --clean`, and `artifacts --dry-run` with explicit
+  usage messages.
+- Wired the command through `inspectGeneratedArtifacts` as a read-only path:
+  - plain `artifacts` reports missing, stale, and cleanable files without failing when config loads,
+  - `artifacts --check` converts freshness changes into blocking `artifact.stale` errors,
+  - cleanable manifest-owned files are surfaced in `artifactInspection.cleanable` without reporting
+    them as deleted by the read-only command.
+- Added CLI coverage for fresh artifacts, missing artifacts in inspect mode, missing/stale
+  `--check` failures, missing manifest failure, cleanable files, custom output directories, help,
+  parser rejections, and deterministic JSON output.
+
+Verification:
+
+- `npm test -- test/cli.test.ts test/reporting.test.ts test/artifact-inspection.test.ts`
+- `npm run typecheck`
+- `npm run format`
+- `npm run lint`
+- `npm test`
+
 ## Phase 4: Example Project And E2E Coverage
 
 Goal: prove the new command works in the executable example workflow.
