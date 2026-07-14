@@ -41,6 +41,61 @@ describe("basic example project", () => {
         readFile(path.join(generatedDir, "docs/search_knowledge_base.md"), "utf8"),
       ).resolves.toContain("# search_knowledge_base");
 
+      await expect(
+        runCliCommand(["artifacts", "--cwd", exampleProject, "--check"]),
+      ).resolves.toMatchObject({
+        kind: "success",
+        exitCode: 0,
+        report: {
+          command: "artifacts",
+          artifactInspection: {
+            checked: true,
+            fresh: true,
+          },
+        },
+      });
+
+      await writeFile(path.join(generatedDir, "docs/search_knowledge_base.md"), "stale\n");
+
+      const staleArtifactsCheck = await runCliCommand([
+        "artifacts",
+        "--cwd",
+        exampleProject,
+        "--check",
+      ]);
+
+      expect(staleArtifactsCheck).toMatchObject({
+        kind: "success",
+        exitCode: 1,
+        report: {
+          command: "artifacts",
+          artifactInspection: {
+            checked: true,
+            fresh: false,
+          },
+        },
+      });
+      expect(
+        staleArtifactsCheck.kind === "success" ? staleArtifactsCheck.report.findings : undefined,
+      ).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            id: "artifact.stale",
+            file: ".tool-call-contract/docs/search_knowledge_base.md",
+          }),
+        ]),
+      );
+
+      await expect(runCliCommand(["generate", "--cwd", exampleProject])).resolves.toMatchObject({
+        kind: "success",
+        exitCode: 0,
+        report: {
+          artifacts: {
+            updated: [".tool-call-contract/docs/search_knowledge_base.md"],
+          },
+        },
+      });
+
       await expect(runCliCommand(["check", "--cwd", exampleProject])).resolves.toMatchObject({
         kind: "success",
         exitCode: 0,

@@ -10,12 +10,8 @@ import {
 import path from "node:path";
 
 import { generateArtifacts } from "../artifacts.js";
-import {
-  collectArtifactFreshnessFindings,
-  loadArtifactManifest,
-  planArtifactWrites,
-  writeArtifactPlan,
-} from "../artifact-writer.js";
+import { inspectGeneratedArtifacts } from "../artifact-inspection.js";
+import { loadArtifactManifest, planArtifactWrites, writeArtifactPlan } from "../artifact-writer.js";
 import { resolveCaptureFiles } from "../captures.js";
 import { runContractChecks } from "../checks.js";
 import { ConfigLoadError, loadConfig } from "../config.js";
@@ -120,7 +116,7 @@ export async function runCliCommand(args: readonly string[]): Promise<CliRunResu
     return {
       kind: "output",
       exitCode: 0,
-      text: "0.4.0\n",
+      text: "0.5.0\n",
     };
   }
 
@@ -374,6 +370,13 @@ export function parseCliArgs(args: readonly string[]): ParsedCliCommand | { mess
     }
   }
 
+  if (commandToken === "artifacts") {
+    const usage = validateArtifactsUsage(files, options);
+    if (usage) {
+      return usage;
+    }
+  }
+
   if (commandToken === "init") {
     const usage = validateInitUsage(files);
     if (usage) {
@@ -463,6 +466,29 @@ async function createCommandReportForParsedInput(parsed: ParsedCliCommand): Prom
         command: parsed.command,
         findings,
         artifacts: plan.artifacts,
+      });
+    }
+
+    if (parsed.command === "artifacts") {
+      const inspection = await inspectGeneratedArtifacts({
+        ...roots,
+        registry,
+        includeCleanable: true,
+        staleSeverity: parsed.options.check ? "error" : undefined,
+      });
+      const findings = applyFindingPolicy(
+        [...registryFindings, ...inspection.findings],
+        parsed.options,
+      );
+
+      return createCommandReport({
+        command: parsed.command,
+        findings,
+        artifactInspection: inspection.report,
+        artifacts: {
+          ...inspection.artifacts,
+          deleted: [],
+        },
       });
     }
 
@@ -619,7 +645,10 @@ async function createCommandReportForParsedInput(parsed: ParsedCliCommand): Prom
           },
         ],
         success: false,
-        artifacts: parsed.command === "generate" ? emptyArtifactReport() : undefined,
+        artifacts:
+          parsed.command === "generate" || parsed.command === "artifacts"
+            ? emptyArtifactReport()
+            : undefined,
       });
     }
 
@@ -631,22 +660,14 @@ async function createArtifactFreshnessFindings(
   registry: ReturnType<typeof createContractRegistry>["registry"],
   roots: { cwd: string; outDir: string },
 ): Promise<Finding[]> {
-  const previousManifest = await loadArtifactManifest(roots);
-
-  if (!previousManifest.manifest) {
-    return previousManifest.findings;
-  }
-
-  const generation = generateArtifacts(registry, {
-    outDir: path.relative(roots.cwd, roots.outDir),
+  const inspection = await inspectGeneratedArtifacts({
+    ...roots,
+    registry,
+    staleSeverity: "error",
+    skipIfManifestMissing: true,
   });
-  const plan = await planArtifactWrites(generation.artifacts, roots);
 
-  return [
-    ...previousManifest.findings,
-    ...plan.findings,
-    ...collectArtifactFreshnessFindings(plan),
-  ];
+  return inspection.findings;
 }
 
 function hasErrorFindings(findings: readonly Finding[]): boolean {
@@ -715,6 +736,7 @@ function isCommandName(value: unknown): value is CommandName {
   return (
     value === "check" ||
     value === "generate" ||
+    value === "artifacts" ||
     value === "validate" ||
     value === "redact" ||
     value === "generate-tests" ||
@@ -769,6 +791,31 @@ function validateGenerateTestsUsage(files: readonly string[]): { message: string
   if (files.length > 0) {
     return {
       message: "generate-tests does not accept file arguments.",
+    };
+  }
+
+  return undefined;
+}
+
+function validateArtifactsUsage(
+  files: readonly string[],
+  options: CliOptions,
+): { message: string } | undefined {
+  if (files.length > 0) {
+    return {
+      message: "artifacts does not accept file arguments.",
+    };
+  }
+
+  if (options.clean) {
+    return {
+      message: "--clean can only be used with generate.",
+    };
+  }
+
+  if (options.dryRun) {
+    return {
+      message: "--dry-run is not needed with artifacts because artifacts never writes files.",
     };
   }
 

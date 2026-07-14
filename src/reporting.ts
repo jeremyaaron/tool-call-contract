@@ -19,6 +19,7 @@ export interface Finding {
 export type CommandName =
   | "check"
   | "generate"
+  | "artifacts"
   | "validate"
   | "redact"
   | "generate-tests"
@@ -45,6 +46,7 @@ export interface CommandReport {
   generatedTests?: GeneratedTestReportMetadata;
   normalization?: NormalizationReportMetadata;
   init?: InitReportMetadata;
+  artifactInspection?: ArtifactInspectionReportMetadata;
   artifacts?: {
     created: string[];
     updated: string[];
@@ -66,6 +68,17 @@ export interface InitReportMetadata {
     action: "created" | "updated" | "skipped";
     reason?: string;
   }>;
+}
+
+export interface ArtifactInspectionReportMetadata {
+  checked: boolean;
+  fresh: boolean;
+  manifest: {
+    path: string;
+    found: boolean;
+    valid: boolean;
+  };
+  cleanable: string[];
 }
 
 export interface ValidationReportMetadata {
@@ -134,6 +147,7 @@ export function createCommandReport(input: {
   generatedTests?: GeneratedTestReportMetadata;
   normalization?: NormalizationReportMetadata;
   init?: InitReportMetadata;
+  artifactInspection?: ArtifactInspectionReportMetadata;
   artifacts?: CommandReport["artifacts"];
 }): CommandReport {
   const findings = [...(input.findings ?? [])];
@@ -153,6 +167,7 @@ export function createCommandReport(input: {
     ...(input.generatedTests ? { generatedTests: input.generatedTests } : {}),
     ...(input.normalization ? { normalization: input.normalization } : {}),
     ...(input.init ? { init: input.init } : {}),
+    ...(input.artifactInspection ? { artifactInspection: input.artifactInspection } : {}),
     ...(input.artifacts ? { artifacts: input.artifacts } : {}),
   };
 }
@@ -214,6 +229,7 @@ export function renderHumanReport(report: CommandReport): string {
   const generatedTests = report.generatedTests;
   const normalization = report.normalization;
   const init = report.init;
+  const artifactInspection = report.artifactInspection;
   const artifacts = report.artifacts;
 
   if (
@@ -224,6 +240,7 @@ export function renderHumanReport(report: CommandReport): string {
     !generatedTests &&
     !normalization &&
     !init &&
+    !artifactInspection &&
     !artifacts
   ) {
     lines.push("No findings.");
@@ -298,6 +315,10 @@ export function renderHumanReport(report: CommandReport): string {
     pushArtifactPaths(lines, "Updated", artifacts.updated);
     pushArtifactPaths(lines, "Unchanged", artifacts.unchanged);
     pushArtifactPaths(lines, "Deleted", artifacts.deleted);
+  }
+
+  if (artifactInspection) {
+    pushArtifactInspectionMetadata(lines, artifactInspection);
   }
 
   if (redaction) {
@@ -387,6 +408,35 @@ function pushArtifactPaths(lines: string[], label: string, paths: readonly strin
   for (const file of paths) {
     lines.push(`  ${file}`);
   }
+}
+
+function pushArtifactInspectionMetadata(
+  lines: string[],
+  inspection: ArtifactInspectionReportMetadata,
+): void {
+  if (!inspection.manifest.found) {
+    lines.push(`Generated artifact manifest not found: ${inspection.manifest.path}`);
+  } else if (!inspection.manifest.valid) {
+    lines.push(`Generated artifact manifest is invalid: ${inspection.manifest.path}`);
+  }
+
+  if (inspection.fresh) {
+    lines.push("Generated artifacts are fresh.");
+  } else {
+    lines.push("Generated artifacts are not fresh. Run tool-call-contract generate.");
+  }
+
+  if (inspection.cleanable.length === 0) {
+    return;
+  }
+
+  lines.push("");
+  lines.push("Cleanable manifest-owned files:");
+  for (const file of inspection.cleanable) {
+    lines.push(`  ${file}`);
+  }
+  lines.push("");
+  lines.push("Run tool-call-contract generate --clean to remove stale manifest-owned files.");
 }
 
 function groupResultsByFile(

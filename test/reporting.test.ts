@@ -430,6 +430,155 @@ describe("reporters", () => {
     });
   });
 
+  it("renders fresh artifact inspection metadata", () => {
+    const report = createCommandReport({
+      command: "check",
+      artifacts: {
+        created: [],
+        updated: [],
+        unchanged: [".tool-call-contract/manifest.json"],
+        deleted: [],
+      },
+      artifactInspection: {
+        checked: false,
+        fresh: true,
+        manifest: {
+          path: ".tool-call-contract/manifest.json",
+          found: true,
+          valid: true,
+        },
+        cleanable: [],
+      },
+    });
+
+    expect(renderHumanReport(report)).toContain(
+      [
+        "Artifacts: 0 created, 0 updated, 1 unchanged, 0 deleted.",
+        "",
+        "Unchanged:",
+        "  .tool-call-contract/manifest.json",
+        "Generated artifacts are fresh.",
+      ].join("\n"),
+    );
+  });
+
+  it("renders stale artifact inspection metadata", () => {
+    const report = createCommandReport({
+      command: "check",
+      artifacts: {
+        created: [],
+        updated: [".tool-call-contract/docs/search_docs.md"],
+        unchanged: [".tool-call-contract/manifest.json"],
+        deleted: [],
+      },
+      artifactInspection: {
+        checked: true,
+        fresh: false,
+        manifest: {
+          path: ".tool-call-contract/manifest.json",
+          found: true,
+          valid: true,
+        },
+        cleanable: [],
+      },
+    });
+
+    expect(renderHumanReport(report)).toContain(
+      [
+        "Artifacts: 0 created, 1 updated, 1 unchanged, 0 deleted.",
+        "",
+        "Updated:",
+        "  .tool-call-contract/docs/search_docs.md",
+        "",
+        "Unchanged:",
+        "  .tool-call-contract/manifest.json",
+        "Generated artifacts are not fresh. Run tool-call-contract generate.",
+      ].join("\n"),
+    );
+  });
+
+  it("renders artifact inspection cleanable files", () => {
+    const report = createCommandReport({
+      command: "check",
+      artifactInspection: {
+        checked: false,
+        fresh: true,
+        manifest: {
+          path: ".tool-call-contract/manifest.json",
+          found: true,
+          valid: true,
+        },
+        cleanable: [".tool-call-contract/docs/old_tool.md"],
+      },
+    });
+
+    expect(renderHumanReport(report)).toContain(
+      [
+        "Generated artifacts are fresh.",
+        "",
+        "Cleanable manifest-owned files:",
+        "  .tool-call-contract/docs/old_tool.md",
+        "",
+        "Run tool-call-contract generate --clean to remove stale manifest-owned files.",
+      ].join("\n"),
+    );
+  });
+
+  it("renders artifact inspection metadata in stable JSON", () => {
+    expect(
+      JSON.parse(
+        renderJsonReport(
+          createCommandReport({
+            command: "check",
+            artifacts: {
+              created: [],
+              updated: [],
+              unchanged: [".tool-call-contract/manifest.json"],
+              deleted: [],
+            },
+            artifactInspection: {
+              checked: true,
+              fresh: true,
+              manifest: {
+                path: ".tool-call-contract/manifest.json",
+                found: true,
+                valid: true,
+              },
+              cleanable: [],
+            },
+          }),
+        ),
+      ),
+    ).toEqual({
+      schemaVersion: 1,
+      command: "check",
+      success: true,
+      summary: {
+        errors: 0,
+        warnings: 0,
+        info: 0,
+        validResults: 0,
+        invalidResults: 0,
+      },
+      artifactInspection: {
+        checked: true,
+        fresh: true,
+        manifest: {
+          path: ".tool-call-contract/manifest.json",
+          found: true,
+          valid: true,
+        },
+        cleanable: [],
+      },
+      artifacts: {
+        created: [],
+        updated: [],
+        unchanged: [".tool-call-contract/manifest.json"],
+        deleted: [],
+      },
+    });
+  });
+
   it("renders init metadata in stable JSON", () => {
     expect(
       JSON.parse(

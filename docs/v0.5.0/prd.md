@@ -1,0 +1,249 @@
+# tool-call-contract v0.5.0 PRD
+
+## Summary
+
+`tool-call-contract` v0.5.0 should make generated artifact freshness a clearer, more
+inspectable part of the product.
+
+The release should introduce a dedicated artifact freshness workflow while internally separating
+generic artifact planning logic from `tool-call-contract` domain logic. The user-facing value is
+better CI and review ergonomics for generated files. The internal value is a cleaner boundary that
+can later support pattern extraction into a standalone package if additional consumers validate the
+need.
+
+## Background
+
+`tool-call-contract` already generates reviewable artifacts:
+
+- JSON fixtures;
+- OpenAI-compatible schemas;
+- Markdown docs;
+- an artifact manifest.
+
+It also already checks artifact freshness through `check` when a manifest exists, and supports
+`generate --dry-run` plus `generate --clean`.
+
+However, artifact freshness is currently a secondary behavior inside broader commands. Users and
+coding agents have to infer the artifact lifecycle from `generate`, `check`, and docs. The
+implementation also mixes reusable artifact planning behavior with `tool-call-contract`-specific
+manifest and finding details.
+
+v0.5.0 should make the artifact lifecycle more explicit without overcommitting to a standalone
+package yet.
+
+## Goals
+
+- Add a first-class artifact freshness workflow for users and CI.
+- Make generated artifact state easier to inspect in human and JSON output.
+- Preserve existing `generate`, `generate --clean`, and `check` behavior.
+- Refactor artifact planning internals toward a generic boundary.
+- Keep the generic boundary internal for now.
+- Avoid presenting `tool-call-contract` as a generic artifact freshness product before the
+  abstraction is proven.
+
+## Non-Goals
+
+- Publishing a separate artifact freshness package.
+- Adding plugin support for arbitrary generators.
+- Supporting multiple manifest formats.
+- Replacing `check`.
+- Changing the generated artifact manifest in a breaking way.
+- Renaming existing CLI commands or config fields.
+- Adding source dependency graph analysis beyond the current generated-output comparison model.
+- Referencing discontinued target products in product docs.
+
+## Users
+
+### TypeScript Agent App Maintainer
+
+Wants generated schemas, fixtures, docs, and tests to stay current in CI without guessing which
+command to run.
+
+### Library Maintainer
+
+Wants generated files to be committed and reviewed, but needs clear feedback when generated output
+is missing, stale, or orphaned.
+
+### Coding Agent
+
+Needs a discoverable command that explains artifact state and gives deterministic next steps.
+
+## Product Requirements
+
+### 1. Dedicated Artifact Command
+
+Add a new command:
+
+```sh
+tool-call-contract artifacts
+```
+
+The command should inspect the current generated artifact plan and report:
+
+- files that would be created;
+- files that would be updated;
+- files that are unchanged;
+- stale manifest-owned files that could be deleted by `generate --clean`;
+- manifest read errors;
+- unsafe manifest paths.
+
+By default, `artifacts` should be read-only.
+
+### 2. Artifact Check Mode
+
+Add:
+
+```sh
+tool-call-contract artifacts --check
+```
+
+`--check` should fail when generated artifacts are missing, stale, or unsafe.
+
+This should provide a more focused CI command than `check` for teams that want artifact freshness
+as its own gate.
+
+### 3. JSON Output
+
+Support:
+
+```sh
+tool-call-contract artifacts --json
+tool-call-contract artifacts --check --json
+```
+
+JSON output should use the existing command report style where practical and include artifact
+metadata consistent with `generate`.
+
+### 4. Clean Planning
+
+The command should expose cleanable stale files without deleting them by default.
+
+Deletion should remain owned by:
+
+```sh
+tool-call-contract generate --clean
+```
+
+This keeps `artifacts` focused on inspection and CI checks, while `generate` remains the command
+that mutates generated output.
+
+### 5. Existing Command Compatibility
+
+Existing behavior must remain valid:
+
+```sh
+tool-call-contract generate
+tool-call-contract generate --dry-run
+tool-call-contract generate --clean
+tool-call-contract check
+```
+
+`check` should continue reporting stale artifacts when a manifest exists.
+
+### 6. Internal Artifact Freshness Boundary
+
+Refactor the current artifact writer/planner logic into an internal generic module.
+
+The module should not know about:
+
+- tool contracts;
+- Zod;
+- OpenAI schemas;
+- fixtures;
+- `tool-call-contract` command names;
+- `tool-call-contract`-specific finding text.
+
+It may know about:
+
+- artifact paths;
+- content;
+- hashes;
+- manifests;
+- output roots;
+- write plans;
+- stale, missing, unchanged, and cleanable state;
+- safe deletion boundaries.
+
+### 7. Manifest Compatibility
+
+The existing manifest should continue to work.
+
+The technical design should decide whether to keep the current manifest shape unchanged or
+introduce optional metadata. Any change must be backward-compatible for manifests generated by
+v0.4.0.
+
+### 8. Documentation
+
+Update README command guidance to explain:
+
+- when to use `generate`;
+- when to use `artifacts`;
+- when to use `check`;
+- how artifact freshness behaves when no manifest exists;
+- how `generate --clean` relates to manifest-owned stale files.
+
+Documentation should not reference discontinued target products or imply an external standalone
+package exists.
+
+## UX Sketch
+
+Clean state:
+
+```text
+tool-call-contract artifacts
+Artifacts: 0 created, 0 updated, 5 unchanged, 0 deleted.
+Generated artifacts are fresh.
+```
+
+Stale state:
+
+```text
+tool-call-contract artifacts --check
+Artifacts: 0 created, 2 updated, 3 unchanged, 0 deleted.
+
+error artifact.stale
+  Generated artifact is stale
+  File: .tool-call-contract/docs/search_docs.md
+  Run tool-call-contract generate to update generated artifacts.
+```
+
+## Success Criteria
+
+- `tool-call-contract artifacts` reports artifact state without writing files.
+- `tool-call-contract artifacts --check` fails on stale or missing generated artifacts.
+- `generate`, `generate --dry-run`, `generate --clean`, and `check` continue to work.
+- JSON output is deterministic.
+- Existing v0.4.0 manifests remain readable.
+- Internal artifact planning code is separated from domain-specific artifact generation.
+- README clearly documents the generated artifact lifecycle.
+- Full release verification passes.
+
+## Risks
+
+### Command Overlap
+
+A new `artifacts` command may overlap with `generate --dry-run`.
+
+Mitigation: define `artifacts` as inspection/checking, and `generate` as writing.
+
+### Clean Safety Regression
+
+Refactoring artifact planning could regress safe deletion behavior.
+
+Mitigation: add focused tests for unsafe paths, orphaned files, missing files, stale files, and
+manifest-owned cleanable files.
+
+### Over-Extraction
+
+The internal generic module may become overdesigned.
+
+Mitigation: keep it internal and extract only behavior already needed by `tool-call-contract`.
+
+## Decisions For Technical Design
+
+- `artifacts` should be read-only in v0.5.0. It should report cleanable files, but actual deletion
+  should remain in `generate --clean`.
+- Public findings should continue to use `artifact.stale` for compatibility unless the technical
+  design identifies a strong reason to introduce narrower IDs.
+- A generator-neutral manifest shape should remain deferred. v0.5.0 may introduce internal types
+  that make such a future shape easier, but should not force a manifest migration.

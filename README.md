@@ -51,6 +51,7 @@ Then run the starter workflow:
 
 ```sh
 npm run tool-contracts:check
+npm run tool-contracts:artifacts
 npm run tool-contracts:normalize:check
 npm run tool-contracts:redact
 npm run tool-contracts:validate
@@ -156,7 +157,36 @@ Use `--clean` to remove stale files that are owned by the previous manifest:
 npx tool-call-contract generate --clean
 ```
 
-Generated artifacts are deterministic and safe to commit. If you prefer local build output, add the output directory to `.gitignore`; `check` only verifies freshness when a generated manifest is present.
+Generated artifacts are deterministic and safe to commit. If you prefer local build output, add the output directory to `.gitignore`.
+
+## Inspect Artifact Freshness
+
+Use `artifacts` when you want to inspect generated files without writing or deleting anything:
+
+```sh
+npx tool-call-contract artifacts
+```
+
+Use `artifacts --check` as a focused CI gate for generated output:
+
+```sh
+npx tool-call-contract artifacts --check
+```
+
+The artifact lifecycle is:
+
+- `generate` writes fixtures, schemas, docs, and `manifest.json`.
+- `artifacts` reports whether generated files are fresh, missing, stale, or cleanable, but exits `0` when config loads.
+- `artifacts --check` exits non-zero when generated files or the manifest are missing, stale, or unsafe.
+- `check` runs broader contract, schema, and artifact freshness checks. It verifies artifacts only when a generated manifest exists, so projects can use local ignored output without failing broad contract checks.
+- `generate --clean` removes stale manifest-owned files. `artifacts` never deletes files.
+
+If you use a custom output directory, pass the same directory to both commands:
+
+```sh
+npx tool-call-contract generate --out-dir generated/tool-contracts
+npx tool-call-contract artifacts --out-dir generated/tool-contracts --check
+```
 
 ## Validate Captures
 
@@ -391,6 +421,7 @@ Useful package scripts:
   "scripts": {
     "tool-contracts:check": "tool-call-contract check",
     "tool-contracts:generate": "tool-call-contract generate",
+    "tool-contracts:artifacts": "tool-call-contract artifacts --check",
     "tool-contracts:normalize": "tool-call-contract normalize --suite raw --format openai-responses --out-dir captures/regression",
     "tool-contracts:normalize:check": "tool-call-contract normalize --suite raw --format openai-responses --out-dir captures/regression --check",
     "tool-contracts:validate": "tool-call-contract validate --suite regression",
@@ -406,13 +437,14 @@ For projects that commit reviewed regression fixtures, use this order:
 
 ```sh
 npx tool-call-contract check
+npx tool-call-contract artifacts --check
 npx tool-call-contract normalize --suite raw --format openai-responses --out-dir captures/regression --check
 npx tool-call-contract redact --check --suite regression
 npx tool-call-contract validate --suite regression
 npx tool-call-contract generate-tests --suite regression --dry-run
 ```
 
-Use `generate --dry-run` as an additional local review step when generated artifacts are not committed, or rely on `check` when the generated manifest is committed.
+Use `generate --dry-run` as an additional local review step when generated artifacts are not committed. Use `artifacts --check` when generated artifacts are committed and should remain fresh. `check` remains the broad contract/schema gate and treats generated artifacts as optional until a manifest exists.
 
 ## Library Usage
 
@@ -440,6 +472,7 @@ This repository includes an executable example at [examples/basic](examples/basi
 ```sh
 npx tool-call-contract check --cwd examples/basic
 npx tool-call-contract generate --cwd examples/basic
+npx tool-call-contract artifacts --cwd examples/basic --check
 npx tool-call-contract normalize --cwd examples/basic --suite raw --format openai-responses --out-dir captures/regression --check
 npx tool-call-contract normalize --cwd examples/basic --suite rawLangchain --format langchain --out-dir captures/regression --check
 npx tool-call-contract validate --cwd examples/basic --suite smoke
@@ -475,7 +508,7 @@ This verifies linting, formatting, types, tests, build output, package metadata,
 npm publish --auth-type=web
 ```
 
-After the package exists on npm, tagged releases can use GitHub trusted publishing. See [v0.4 release notes](docs/v0.4.0/release.md).
+After the package exists on npm, tagged releases can use GitHub trusted publishing. See [v0.5 release notes](docs/v0.5.0/release.md).
 
 ## Known Limitations
 
@@ -507,3 +540,7 @@ After the package exists on npm, tagged releases can use GitHub trusted publishi
 - [v0.4 technical design](docs/v0.4.0/technical-design.md)
 - [v0.4 implementation plan](docs/v0.4.0/implementation-plan.md)
 - [v0.4 release notes](docs/v0.4.0/release.md)
+- [v0.5 PRD](docs/v0.5.0/prd.md)
+- [v0.5 technical design](docs/v0.5.0/technical-design.md)
+- [v0.5 implementation plan](docs/v0.5.0/implementation-plan.md)
+- [v0.5 release notes](docs/v0.5.0/release.md)

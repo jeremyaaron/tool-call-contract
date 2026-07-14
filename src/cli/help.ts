@@ -22,6 +22,7 @@ Commands:
   init                  Create a starter contract regression setup
   check                 Check contracts and generated artifact freshness
   generate              Generate fixtures, schemas, docs, and manifest
+  artifacts             Inspect generated artifact freshness
   validate <files...>   Validate captured tool-call JSON files
   redact <files...>     Redact captured tool-call JSON files
   normalize <files...>  Normalize raw tool-call traces into capture JSON
@@ -77,7 +78,8 @@ const commandHelps: Record<HelpTopic, CommandHelp> = {
     ],
     notes: [
       "Loads configured contracts and reports schema, contract, and artifact freshness findings.",
-      "Run in CI to ensure generated artifacts are current.",
+      "Artifact freshness is checked only when a generated manifest exists.",
+      "Use artifacts --check when generated artifacts are committed and must exist.",
     ],
   },
   generate: {
@@ -98,11 +100,41 @@ const commandHelps: Record<HelpTopic, CommandHelp> = {
     examples: [
       "tool-call-contract generate",
       "tool-call-contract generate --dry-run",
+      "tool-call-contract generate --out-dir generated/tool-contracts",
       "tool-call-contract generate --clean --out-dir artifacts/contracts",
     ],
     notes: [
       "Generated artifacts are deterministic and should be committed when they are part of the project contract surface.",
       "Use check in CI to catch stale generated output.",
+    ],
+  },
+  artifacts: {
+    command: "artifacts",
+    summary: "Inspect generated artifact freshness.",
+    usage: ["tool-call-contract artifacts [options]"],
+    options: [
+      {
+        flag: "--check",
+        description: "Fail when generated artifacts or the manifest are missing or stale.",
+      },
+      { flag: "--json", description: "Print a machine-readable command report." },
+      { flag: "--cwd <path>", description: "Run from a different working directory." },
+      { flag: "--config <path>", description: "Load a specific config file." },
+      {
+        flag: "--out-dir <path>",
+        description: "Inspect generated artifacts under a custom output directory.",
+      },
+    ],
+    examples: [
+      "tool-call-contract artifacts",
+      "tool-call-contract artifacts --check",
+      "tool-call-contract artifacts --out-dir artifacts/contracts --json",
+    ],
+    notes: [
+      "This command never writes or deletes files.",
+      "Without --check, stale or missing artifacts are reported without failing.",
+      "Run tool-call-contract generate to update artifacts.",
+      "Run tool-call-contract generate --clean to remove stale manifest-owned files.",
     ],
   },
   validate: {
@@ -249,6 +281,7 @@ export function isHelpTopic(value: unknown): value is HelpTopic {
     value === "init" ||
     value === "check" ||
     value === "generate" ||
+    value === "artifacts" ||
     value === "validate" ||
     value === "redact" ||
     value === "generate-tests" ||
