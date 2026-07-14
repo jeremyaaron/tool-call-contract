@@ -55,6 +55,24 @@ Check contracts and generated artifact freshness:
 npx tool-call-contract check
 ```
 
+Generate reviewable contract artifacts:
+
+```sh
+npx tool-call-contract generate
+```
+
+Inspect generated artifacts without writing:
+
+```sh
+npx tool-call-contract artifacts
+```
+
+Gate committed generated artifacts in CI:
+
+```sh
+npx tool-call-contract artifacts --check
+```
+
 Normalize one OpenAI Responses trace:
 
 ```sh
@@ -158,6 +176,8 @@ Recommended local update flow:
 
 ```sh
 npx tool-call-contract check
+npx tool-call-contract generate
+npx tool-call-contract artifacts
 npx tool-call-contract normalize --suite raw --format openai-responses --out-dir captures/regression
 npx tool-call-contract redact --check --suite regression
 npx tool-call-contract validate --suite regression
@@ -168,6 +188,7 @@ Recommended CI flow:
 
 ```sh
 npx tool-call-contract check
+npx tool-call-contract artifacts --check
 npx tool-call-contract normalize --suite raw --format openai-responses --out-dir captures/regression --check
 npx tool-call-contract redact --check --suite regression
 npx tool-call-contract validate --suite regression

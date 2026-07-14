@@ -64,6 +64,9 @@ No findings.
 tool-call-contract generate
 Artifacts: 8 created, 0 updated
 
+tool-call-contract artifacts --check
+Generated artifacts are fresh.
+
 tool-call-contract normalize --suite raw --format openai-responses --out-dir captures/regression --check
 Normalization check: openai-responses, 0 changed, 1 unchanged.
 
@@ -112,9 +115,9 @@ All captures already redacted.</code></pre>
           <h2 id="artifacts-title">Commit-friendly artifacts for agent work</h2>
           <p>
             The CLI writes deterministic files that can live in source control. CI can run
-            <code>check</code> to catch stale generated output before a drifted tool contract
-            reaches production. Raw production telemetry belongs in logs or observability systems;
-            commit only reviewed, redacted regression fixtures.
+            <code>artifacts --check</code> as a focused freshness gate, while <code>check</code>
+            remains the broader contract and schema gate. Raw production telemetry belongs in logs
+            or observability systems; commit only reviewed, redacted regression fixtures.
           </p>
         </div>
         <div class="artifact-list" aria-label="Generated artifacts">
@@ -161,6 +164,7 @@ export default defineConfig({
   },
 });</code></pre>
           <pre><code>npx tool-call-contract check
+npx tool-call-contract artifacts --check
 npx tool-call-contract normalize --suite raw --format openai-responses --out-dir captures/regression --check
 npx tool-call-contract redact --check --suite regression
 npx tool-call-contract validate --suite regression

@@ -352,6 +352,29 @@ Acceptance criteria:
 - Docs do not imply a standalone artifact freshness package exists.
 - No discontinued target product references are present.
 
+Implementation notes:
+
+- Added a README "Inspect Artifact Freshness" section that distinguishes:
+  - `generate` as the write path,
+  - `artifacts` as read-only inspection,
+  - `artifacts --check` as the focused CI freshness gate,
+  - `check` as the broader contract/schema/freshness gate,
+  - and `generate --clean` as the only artifact cleanup path.
+- Updated README quickstart, package script examples, recommended CI, and example commands to use
+  `artifacts --check` when generated artifacts are committed.
+- Added `tool-contracts:artifacts` to the initializer's default package scripts so `init`,
+  README, and recommended CI use the same command surface.
+- Refined command help notes for `check` and `artifacts` so help output explains no-manifest
+  behavior and read-only inspect mode.
+- Updated the product site and `AGENTS.md` to mention the focused artifact freshness gate.
+- Reviewed docs/site for discontinued target product references and stale standalone-package
+  messaging; no discontinued target product references were present.
+
+Verification:
+
+- `npm test -- test/init.test.ts test/cli.test.ts`
+- `npm run format`
+
 ## Phase 6: Cross-Command Hardening
 
 Goal: catch regressions across artifact-related command combinations before release hardening.

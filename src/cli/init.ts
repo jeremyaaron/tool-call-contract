@@ -57,6 +57,7 @@ interface PlanInitProjectOptionsForTests extends InitProjectOptions {
 export const defaultInitPackageScripts: Record<string, string> = {
   "tool-contracts:check": "tool-call-contract check",
   "tool-contracts:generate": "tool-call-contract generate",
+  "tool-contracts:artifacts": "tool-call-contract artifacts --check",
   "tool-contracts:normalize":
     "tool-call-contract normalize --suite raw --format openai-responses --out-dir captures/regression",
   "tool-contracts:normalize:check":

@@ -78,7 +78,8 @@ const commandHelps: Record<HelpTopic, CommandHelp> = {
     ],
     notes: [
       "Loads configured contracts and reports schema, contract, and artifact freshness findings.",
-      "Run in CI to ensure generated artifacts are current.",
+      "Artifact freshness is checked only when a generated manifest exists.",
+      "Use artifacts --check when generated artifacts are committed and must exist.",
     ],
   },
   generate: {
@@ -99,6 +100,7 @@ const commandHelps: Record<HelpTopic, CommandHelp> = {
     examples: [
       "tool-call-contract generate",
       "tool-call-contract generate --dry-run",
+      "tool-call-contract generate --out-dir generated/tool-contracts",
       "tool-call-contract generate --clean --out-dir artifacts/contracts",
     ],
     notes: [
@@ -111,7 +113,10 @@ const commandHelps: Record<HelpTopic, CommandHelp> = {
     summary: "Inspect generated artifact freshness.",
     usage: ["tool-call-contract artifacts [options]"],
     options: [
-      { flag: "--check", description: "Fail when generated artifacts are missing or stale." },
+      {
+        flag: "--check",
+        description: "Fail when generated artifacts or the manifest are missing or stale.",
+      },
       { flag: "--json", description: "Print a machine-readable command report." },
       { flag: "--cwd <path>", description: "Run from a different working directory." },
       { flag: "--config <path>", description: "Load a specific config file." },
@@ -127,6 +132,7 @@ const commandHelps: Record<HelpTopic, CommandHelp> = {
     ],
     notes: [
       "This command never writes or deletes files.",
+      "Without --check, stale or missing artifacts are reported without failing.",
       "Run tool-call-contract generate to update artifacts.",
       "Run tool-call-contract generate --clean to remove stale manifest-owned files.",
     ],
