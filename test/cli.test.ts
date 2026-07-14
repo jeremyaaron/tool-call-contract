@@ -812,6 +812,22 @@ describe("runCliCommand", () => {
     });
   });
 
+  it("passes check with no generated manifest when contracts are valid", async () => {
+    const project = await createConfigProject();
+
+    await expect(runCliCommand(["check", "--cwd", project])).resolves.toMatchObject({
+      kind: "success",
+      exitCode: 0,
+      report: {
+        command: "check",
+        success: true,
+      },
+    });
+    await expect(fileExists(path.join(project, ".tool-call-contract/manifest.json"))).resolves.toBe(
+      false,
+    );
+  });
+
   it("writes generated artifacts", async () => {
     const project = await createConfigProject();
     const result = await runCliCommand(["generate", "--cwd", project]);
@@ -889,6 +905,15 @@ describe("runCliCommand", () => {
     await expect(fileExists(path.join(project, ".tool-call-contract/manifest.json"))).resolves.toBe(
       false,
     );
+    await expect(
+      fileExists(path.join(project, ".tool-call-contract/docs/search_docs.md")),
+    ).resolves.toBe(false);
+    await expect(
+      fileExists(path.join(project, ".tool-call-contract/schemas/search_docs.openai.json")),
+    ).resolves.toBe(false);
+    await expect(
+      fileExists(path.join(project, ".tool-call-contract/fixtures/search_docs.valid.json")),
+    ).resolves.toBe(false);
   });
 
   it("writes to the overridden output directory", async () => {
@@ -1295,6 +1320,48 @@ describe("runCliCommand", () => {
     ).resolves.toBe(true);
   });
 
+  it("cleans stale manifest-owned files only under the configured output directory", async () => {
+    const project = await createConfigProject({ extraContract: true });
+    const unrelatedDefaultOutputArtifact = path.join(
+      project,
+      ".tool-call-contract/docs/create_issue.md",
+    );
+    await mkdir(path.dirname(unrelatedDefaultOutputArtifact), { recursive: true });
+    await writeFile(unrelatedDefaultOutputArtifact, "unrelated output\n");
+    await runCliCommand(["generate", "--cwd", project, "--out-dir", "artifacts/contracts"]);
+    await writeProjectConfig(project);
+
+    const result = await runCliCommand([
+      "generate",
+      "--cwd",
+      project,
+      "--out-dir",
+      "artifacts/contracts",
+      "--clean",
+    ]);
+
+    expect(result).toMatchObject({
+      kind: "success",
+      exitCode: 0,
+      report: {
+        artifacts: {
+          deleted: [
+            "artifacts/contracts/fixtures/create_issue.valid.json",
+            "artifacts/contracts/fixtures/create_issue.invalid.json",
+            "artifacts/contracts/schemas/create_issue.openai.json",
+            "artifacts/contracts/docs/create_issue.md",
+          ],
+        },
+      },
+    });
+    await expect(
+      fileExists(path.join(project, "artifacts/contracts/docs/create_issue.md")),
+    ).resolves.toBe(false);
+    await expect(readFile(unrelatedDefaultOutputArtifact, "utf8")).resolves.toBe(
+      "unrelated output\n",
+    );
+  });
+
   it("refuses to clean unsafe manifest paths", async () => {
     const project = await createConfigProject();
     const outsideFile = path.join(project, "..", "tool-call-contract-outside.txt");
@@ -1329,6 +1396,56 @@ describe("runCliCommand", () => {
     expect(result).toMatchObject({
       kind: "success",
       exitCode: 1,
+    });
+    expect(result.kind === "success" ? result.report.findings : undefined).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: "artifact.path-outside-out-dir",
+          file: "../tool-call-contract-outside.txt",
+        }),
+      ]),
+    );
+    await expect(readFile(outsideFile, "utf8")).resolves.toBe("do not delete");
+    await rm(outsideFile);
+  });
+
+  it("reports unsafe manifest paths during artifacts check without deleting them", async () => {
+    const project = await createConfigProject();
+    const outsideFile = path.join(project, "..", "tool-call-contract-outside.txt");
+    await runCliCommand(["generate", "--cwd", project]);
+    await writeFile(outsideFile, "do not delete");
+    await writeFile(
+      path.join(project, ".tool-call-contract/manifest.json"),
+      JSON.stringify(
+        {
+          schemaVersion: 1,
+          generator: {
+            name: "tool-call-contract",
+            version: "0.4.0",
+          },
+          generatedAt: null,
+          contracts: [],
+          files: [
+            {
+              path: "../tool-call-contract-outside.txt",
+              kind: "doc",
+              hash: "unsafe",
+            },
+          ],
+        },
+        null,
+        2,
+      ),
+    );
+
+    const result = await runCliCommand(["artifacts", "--cwd", project, "--check"]);
+
+    expect(result).toMatchObject({
+      kind: "success",
+      exitCode: 1,
+      report: {
+        command: "artifacts",
+      },
     });
     expect(result.kind === "success" ? result.report.findings : undefined).toEqual(
       expect.arrayContaining([

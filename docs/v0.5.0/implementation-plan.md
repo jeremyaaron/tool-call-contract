@@ -405,6 +405,25 @@ Acceptance criteria:
 - Existing v0.1-v0.4 workflows still pass.
 - Command help does not drift from parser behavior.
 
+Implementation notes:
+
+- Added explicit CLI coverage that `check` passes with no generated manifest when contracts are
+  otherwise valid, preserving broad-check optional artifact behavior.
+- Strengthened `generate --dry-run` coverage to assert planned fixture, schema, doc, and manifest
+  paths are not written.
+- Added custom `--out-dir` clean coverage proving `generate --clean` deletes stale
+  manifest-owned files under the configured output directory without touching an unrelated
+  similarly named file in the default output directory.
+- Added read-only unsafe manifest coverage proving `artifacts --check` reports
+  `artifact.path-outside-out-dir` and does not delete the outside file.
+- Existing Phase 3 tests continue to cover deterministic `artifacts --json`, `artifacts --out-dir`
+  matching `generate --out-dir`, stale/missing artifact checks, and help example parsing.
+
+Verification:
+
+- `npm test -- test/cli.test.ts test/artifact-inspection.test.ts test/artifact-writer.test.ts`
+- `npm run format`
+
 ## Phase 7: v0.5.0 Release Hardening
 
 Goal: prepare the package for a clean v0.5.0 release.
