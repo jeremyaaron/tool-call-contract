@@ -84,6 +84,17 @@ Acceptance criteria:
 - `src/index.ts` does not export `artifact-planner`.
 - No user-visible output changes.
 
+Implementation notes:
+
+- Added internal `src/artifact-planner.ts` with generic artifact planning, path safety, write
+  execution, cleanable-file planning, and plan summaries.
+- Refactored `src/artifact-writer.ts` into the `tool-call-contract` facade that preserves existing
+  public exports, manifest parsing, findings, and report summaries.
+- Added `test/artifact-planner.test.ts` for create/update/unchanged state, unsafe artifact paths,
+  cleanable manifest-owned files, unsafe manifest paths, and duplicate cleanable path deduping.
+- Confirmed `src/index.ts` does not export `artifact-planner`.
+- Verified the refactor does not change existing artifact generation, check, or clean behavior.
+
 ## Phase 1: Artifact Inspection Domain Helper
 
 Goal: add a shared `tool-call-contract` artifact inspection helper on top of the generic planner.

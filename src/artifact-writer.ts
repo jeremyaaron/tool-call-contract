@@ -1,7 +1,13 @@
-import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { readFile } from "node:fs/promises";
 import path from "node:path";
 
 import type { ArtifactManifest, GeneratedArtifact } from "./artifacts.js";
+import {
+  planArtifactChanges,
+  summarizeArtifactPlan,
+  writeArtifactChanges,
+  type ArtifactPlanIssue,
+} from "./artifact-planner.js";
 import type { CommandReport, Finding } from "./reporting.js";
 
 export type ArtifactWriteAction = "create" | "update" | "unchanged";
@@ -44,78 +50,31 @@ export async function planArtifactWrites(
   roots: ArtifactWriteRoots,
   options: ArtifactWritePlanOptions = {},
 ): Promise<ArtifactWritePlan> {
-  const entries: PlannedArtifactWrite[] = [];
-  const findings: Finding[] = [];
-
-  for (const artifact of artifacts) {
-    const resolved = resolveArtifactPath(artifact, roots);
-
-    if (!resolved.ok) {
-      findings.push(resolved.finding);
-      continue;
-    }
-
-    const existing = await readExistingArtifact(artifact, resolved.absolutePath);
-
-    if (!existing.ok) {
-      findings.push(existing.finding);
-      continue;
-    }
-
-    entries.push({
-      artifact,
-      absolutePath: resolved.absolutePath,
-      action:
-        existing.content === undefined
-          ? "create"
-          : existing.content === artifact.content
-            ? "unchanged"
-            : "update",
-    });
-  }
-
-  const deletePlan = options.clean
-    ? planArtifactDeletes(artifacts, roots, options.previousManifest)
-    : {
-        deletes: [],
-        findings: [],
-      };
-
-  findings.push(...deletePlan.findings);
+  const plan = await planArtifactChanges({
+    artifacts,
+    cwd: roots.cwd,
+    outDir: roots.outDir,
+    previousManifest: options.previousManifest,
+    includeCleanable: options.clean,
+  });
+  const summary = summarizeArtifactPlan(plan);
 
   return {
-    entries,
-    deletes: deletePlan.deletes,
-    findings,
-    artifacts: summarizeArtifactEntries(entries, deletePlan.deletes),
+    entries: plan.entries,
+    deletes: plan.cleanable,
+    findings: plan.issues.map(createPlanIssueFinding),
+    artifacts: summarizeArtifactEntries(summary),
   };
 }
 
 export async function writeArtifactPlan(plan: ArtifactWritePlan): Promise<Finding[]> {
-  const findings: Finding[] = [];
+  const issues = await writeArtifactChanges({
+    entries: plan.entries,
+    cleanable: plan.deletes,
+    issues: [],
+  });
 
-  for (const entry of plan.entries) {
-    if (entry.action === "unchanged") {
-      continue;
-    }
-
-    try {
-      await mkdir(path.dirname(entry.absolutePath), { recursive: true });
-      await writeFile(entry.absolutePath, entry.artifact.content, "utf8");
-    } catch (error) {
-      findings.push(createFileSystemFinding("artifact.write-failed", entry.artifact.path, error));
-    }
-  }
-
-  for (const entry of plan.deletes) {
-    try {
-      await rm(entry.absolutePath, { force: true });
-    } catch (error) {
-      findings.push(createDeleteFileSystemFinding(entry.path, error));
-    }
-  }
-
-  return findings;
+  return issues.map(createPlanIssueFinding);
 }
 
 export async function loadArtifactManifest(
@@ -160,127 +119,30 @@ export function collectArtifactFreshnessFindings(plan: ArtifactWritePlan): Findi
     }));
 }
 
-function summarizeArtifactEntries(
-  entries: readonly PlannedArtifactWrite[],
-  deletes: readonly PlannedArtifactDelete[],
-): NonNullable<CommandReport["artifacts"]> {
+function summarizeArtifactEntries(input: {
+  created: string[];
+  updated: string[];
+  unchanged: string[];
+  cleanable: string[];
+}): NonNullable<CommandReport["artifacts"]> {
   return {
-    created: entries
-      .filter((entry) => entry.action === "create")
-      .map((entry) => entry.artifact.path),
-    updated: entries
-      .filter((entry) => entry.action === "update")
-      .map((entry) => entry.artifact.path),
-    unchanged: entries
-      .filter((entry) => entry.action === "unchanged")
-      .map((entry) => entry.artifact.path),
-    deleted: deletes.map((entry) => entry.path),
+    created: input.created,
+    updated: input.updated,
+    unchanged: input.unchanged,
+    deleted: input.cleanable,
   };
 }
 
-function resolveArtifactPath(
-  artifact: GeneratedArtifact,
-  roots: ArtifactWriteRoots,
-): { ok: true; absolutePath: string } | { ok: false; finding: Finding } {
-  return resolveArtifactFilePath(artifact.path, roots);
-}
-
-function resolveArtifactFilePath(
-  artifactPath: string,
-  roots: ArtifactWriteRoots,
-): { ok: true; absolutePath: string } | { ok: false; finding: Finding } {
-  const normalizedArtifactPath = artifactPath.replaceAll("\\", path.sep);
-
-  if (path.isAbsolute(normalizedArtifactPath)) {
-    return {
-      ok: false,
-      finding: createPathFinding(artifactPath),
-    };
+function createPlanIssueFinding(issue: ArtifactPlanIssue): Finding {
+  if (issue.code === "artifact.path-outside-out-dir") {
+    return createPathFinding(issue.path);
   }
 
-  const cwd = path.resolve(roots.cwd);
-  const outDir = path.resolve(roots.outDir);
-  const absolutePath = path.resolve(cwd, normalizedArtifactPath);
-
-  if (!isPathInside(absolutePath, outDir)) {
-    return {
-      ok: false,
-      finding: createPathFinding(artifactPath),
-    };
+  if (issue.code === "artifact.delete-failed") {
+    return createDeleteFileSystemFinding(issue.path, issue.message);
   }
 
-  return {
-    ok: true,
-    absolutePath,
-  };
-}
-
-async function readExistingArtifact(
-  artifact: GeneratedArtifact,
-  absolutePath: string,
-): Promise<{ ok: true; content?: string } | { ok: false; finding: Finding }> {
-  try {
-    return {
-      ok: true,
-      content: await readFile(absolutePath, "utf8"),
-    };
-  } catch (error) {
-    if (isNodeError(error) && error.code === "ENOENT") {
-      return {
-        ok: true,
-      };
-    }
-
-    return {
-      ok: false,
-      finding: createFileSystemFinding("artifact.write-failed", artifact.path, error),
-    };
-  }
-}
-
-function planArtifactDeletes(
-  artifacts: readonly GeneratedArtifact[],
-  roots: ArtifactWriteRoots,
-  previousManifest: ArtifactManifest | undefined,
-): {
-  deletes: PlannedArtifactDelete[];
-  findings: Finding[];
-} {
-  if (!previousManifest) {
-    return {
-      deletes: [],
-      findings: [],
-    };
-  }
-
-  const currentPaths = new Set(artifacts.map((artifact) => artifact.path));
-  const seenPaths = new Set<string>();
-  const deletes: PlannedArtifactDelete[] = [];
-  const findings: Finding[] = [];
-
-  for (const file of previousManifest.files) {
-    if (currentPaths.has(file.path) || seenPaths.has(file.path)) {
-      continue;
-    }
-
-    seenPaths.add(file.path);
-    const resolved = resolveArtifactFilePath(file.path, roots);
-
-    if (!resolved.ok) {
-      findings.push(resolved.finding);
-      continue;
-    }
-
-    deletes.push({
-      path: file.path,
-      absolutePath: resolved.absolutePath,
-    });
-  }
-
-  return {
-    deletes,
-    findings,
-  };
+  return createFileSystemFinding("artifact.write-failed", issue.path, issue.message);
 }
 
 function parseArtifactManifest(content: string): ArtifactManifest {
@@ -350,11 +212,6 @@ function isArtifactKind(value: unknown): value is ArtifactManifest["files"][numb
   return value === "fixture" || value === "schema" || value === "doc" || value === "manifest";
 }
 
-function isPathInside(file: string, directory: string): boolean {
-  const relative = path.relative(directory, file);
-  return relative === "" || (!relative.startsWith("..") && !path.isAbsolute(relative));
-}
-
 function createPathFinding(artifactPath: string): Finding {
   return {
     id: "artifact.path-outside-out-dir",
@@ -368,12 +225,12 @@ function createPathFinding(artifactPath: string): Finding {
   };
 }
 
-function createFileSystemFinding(id: string, artifactPath: string, error: unknown): Finding {
+function createFileSystemFinding(id: string, artifactPath: string, message: string): Finding {
   return {
     id,
     severity: "error",
     title: "Generated artifact could not be written",
-    message: `Could not write "${artifactPath}": ${formatErrorMessage(error)}`,
+    message: `Could not write "${artifactPath}": ${message}`,
     impact: "Generated artifacts on disk may be incomplete or stale.",
     suggestion:
       "Check output directory permissions and remove files that block generated directories.",
@@ -381,12 +238,12 @@ function createFileSystemFinding(id: string, artifactPath: string, error: unknow
   };
 }
 
-function createDeleteFileSystemFinding(artifactPath: string, error: unknown): Finding {
+function createDeleteFileSystemFinding(artifactPath: string, message: string): Finding {
   return {
     id: "artifact.write-failed",
     severity: "error",
     title: "Generated artifact could not be deleted",
-    message: `Could not delete "${artifactPath}": ${formatErrorMessage(error)}`,
+    message: `Could not delete "${artifactPath}": ${message}`,
     impact: "Generated artifacts on disk may include stale files.",
     suggestion: "Check output directory permissions and remove stale generated files manually.",
     file: artifactPath,
