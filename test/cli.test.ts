@@ -11,7 +11,7 @@ import { commandHelpEntries } from "../src/cli/help.js";
 
 describe("package scaffold", () => {
   it("exports the package version", () => {
-    expect(version).toBe("0.4.0");
+    expect(version).toBe("0.5.0");
   });
 });
 
@@ -371,7 +371,7 @@ describe("runCliCommand", () => {
     await expect(runCliCommand(["--version"])).resolves.toEqual({
       kind: "output",
       exitCode: 0,
-      text: "0.4.0\n",
+      text: "0.5.0\n",
     });
   });
 
@@ -1374,7 +1374,7 @@ describe("runCliCommand", () => {
           schemaVersion: 1,
           generator: {
             name: "tool-call-contract",
-            version: "0.4.0",
+            version: "0.5.0",
           },
           generatedAt: null,
           contracts: [],
@@ -1421,7 +1421,7 @@ describe("runCliCommand", () => {
           schemaVersion: 1,
           generator: {
             name: "tool-call-contract",
-            version: "0.4.0",
+            version: "0.5.0",
           },
           generatedAt: null,
           contracts: [],

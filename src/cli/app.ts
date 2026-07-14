@@ -116,7 +116,7 @@ export async function runCliCommand(args: readonly string[]): Promise<CliRunResu
     return {
       kind: "output",
       exitCode: 0,
-      text: "0.4.0\n",
+      text: "0.5.0\n",
     };
   }
 

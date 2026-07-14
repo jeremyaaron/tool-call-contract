@@ -508,7 +508,7 @@ This verifies linting, formatting, types, tests, build output, package metadata,
 npm publish --auth-type=web
 ```
 
-After the package exists on npm, tagged releases can use GitHub trusted publishing. See [v0.4 release notes](docs/v0.4.0/release.md).
+After the package exists on npm, tagged releases can use GitHub trusted publishing. See [v0.5 release notes](docs/v0.5.0/release.md).
 
 ## Known Limitations
 
@@ -540,3 +540,7 @@ After the package exists on npm, tagged releases can use GitHub trusted publishi
 - [v0.4 technical design](docs/v0.4.0/technical-design.md)
 - [v0.4 implementation plan](docs/v0.4.0/implementation-plan.md)
 - [v0.4 release notes](docs/v0.4.0/release.md)
+- [v0.5 PRD](docs/v0.5.0/prd.md)
+- [v0.5 technical design](docs/v0.5.0/technical-design.md)
+- [v0.5 implementation plan](docs/v0.5.0/implementation-plan.md)
+- [v0.5 release notes](docs/v0.5.0/release.md)

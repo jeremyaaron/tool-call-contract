@@ -467,6 +467,34 @@ Acceptance criteria:
   compatibility, and internal artifact planning boundary improvements.
 - The repo is ready for tagging after review.
 
+Implementation notes:
+
+- Bumped `package.json`, `package-lock.json`, exported library version, CLI `--version`, artifact
+  manifest default generator version, tests, and packed-package smoke expectations to `0.5.0`.
+- Added `docs/v0.5.0/release.md`, updated `CHANGELOG.md`, and linked the v0.5 docs/release notes
+  from the README.
+- Reviewed the package root and built declaration surface; `artifact-planner` remains internal and
+  is not exported from `src/index.ts` or `dist/index.d.ts`.
+- Confirmed the Pages/site copy remains acceptable for v0.5.0 after Phase 5's artifact freshness
+  updates.
+- Confirmed `npm pack --dry-run --ignore-scripts` includes only:
+  - `CHANGELOG.md`,
+  - `LICENSE`,
+  - `README.md`,
+  - `dist/cli/index.d.ts`,
+  - `dist/cli/index.js`,
+  - `dist/index.d.ts`,
+  - `dist/index.js`,
+  - and `package.json`.
+
+Verification:
+
+- `npm test -- test/cli.test.ts test/artifacts.test.ts`
+- `npm run format`
+- `npm run verify:release`
+- `node dist/cli/index.js --version`
+- `rg -n "artifact-planner|ArtifactPlanSummary|planArtifactChanges|writeArtifactChanges" src/index.ts dist/index.d.ts`
+
 ## Deferred Post-v0.5.0 Work
 
 These ideas are useful, but intentionally outside v0.5.0:

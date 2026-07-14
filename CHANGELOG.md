@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.5.0
+
+Generated artifact freshness and CI ergonomics release.
+
+- Added `artifacts` as a read-only command for inspecting generated fixture, schema, doc, and manifest freshness.
+- Added `artifacts --check` as a focused CI gate that fails when generated artifacts or the manifest are missing, stale, or unsafe.
+- Preserved broad `check` compatibility: generated artifacts remain optional until a manifest exists.
+- Clarified the artifact lifecycle across `generate`, `artifacts`, `artifacts --check`, `check`, and `generate --clean`.
+- Added `tool-contracts:artifacts` to generated starter package scripts.
+- Introduced an internal artifact planning boundary to keep write, inspect, check, and clean behavior consistent without exposing unstable planner internals.
+- Expanded artifact lifecycle coverage across CLI, example, and release verification paths.
+
 ## 0.4.0
 
 Adoption and operability release.
